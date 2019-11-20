@@ -6,12 +6,15 @@ export class Menu extends Phaser.Scene{
             key: CONSTANTS.SCENES.MENU
         })
     }
+
     init() {
         
     }
+
     preload(){
         this.load.image('play-button', 'source/assets/play.png');
     }
+    
     create(){
         let playButton = this.add.image(350, 350, 'play-button').setInteractive();
         playButton.on("pointerup", ()=>{

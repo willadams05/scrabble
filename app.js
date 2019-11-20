@@ -13,9 +13,26 @@ app.get('/', function (req, res) {
 app.use(express.static(__dirname));
 
 io.on('connection', function (socket) {
-  console.log(socket.id)
-  socket.emit('news', { hello: 'world' });
-  socket.on('my other event', function (data) {
+  console.log("Connection on Socket ID: ", socket.id);
+  socket.emit('init', 'Connection Initialized');
+
+  socket.on('success', function (data) {
     console.log(data);
+  });
+
+  socket.on('tile_placed', function(data) {
+    console.log('Tile Placed: ', data);
+  });
+
+  socket.on('tile_removed', function(data) {
+    console.log('Tile Removed: ', data);
+  });
+
+  socket.on('word_added', function(data) {
+    console.log('Word Added: ', data);
+  });
+
+  socket.on('rollback', function(data) {
+    console.log('Rollback: ', data);
   });
 });
