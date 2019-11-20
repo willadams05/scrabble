@@ -34,7 +34,7 @@ export class Scrabble extends Phaser.Scene{
         this.direction = '';
         // The number of tiles currently on the board that have not been submitted
         this.clickable_tiles = 0;
-        // Flag so that clickable_tiles can be decreased once (instead of twice if removing from both veritcal/horizontal words)
+        // Flag so that clickable_tiles can be decreased once (instead of twice if removing from both vertical/horizontal words)
         this.decrease_clickable = false;
         // The alphabet tile selected from the available pieces
         this.selected_tile = null;
@@ -278,28 +278,31 @@ export class Scrabble extends Phaser.Scene{
     // Sets the word(s) being currently spelled according to the placement of the most recent tile.
     setCurrentWord(tile, word_index) {
         console.log('Word Indices: ', word_index);
+        console.log('Old Horizontal Word: ', getWord(this.current_horizontal));
+        console.log('Old Vertical Word: ', getWord(this.current_vertical));
         // If this is the first tile being submitted, determine if this tile is adjacent to any previously submitted tiles
         if(this.clickable_tiles == 0 && Object.keys(this.submitted_tiles).length != 0) {
             this.initializeWords(tile);
         }
         else {
+            console.log('Adding Onto Current Word');
             let h_index = word_index[0], v_index = word_index[1];
             // Add the tile to the current word(s) being formed.
             if(h_index != -1) {
-                console.log('Tile: ', this.selected_tile.letter, ' being added at horizontal index: ', h_index)
+                // console.log('Tile: ', this.selected_tile.letter, ' being added at horizontal index: ', h_index)
                 this.current_horizontal.splice(h_index, 0, this.selected_tile);
             }
             if(v_index != -1) {
-                console.log('Tile: ', this.selected_tile.letter, ' being added at vertical index: ', v_index)
+                // console.log('Tile: ', this.selected_tile.letter, ' being added at vertical index: ', v_index)
                 this.current_vertical.splice(v_index, 0, this.selected_tile);
             }
         }
-        
-        console.log('Current Horizontal Word: ', this.current_horizontal);
-        console.log('Current Vertical Word: ', this.current_vertical);
+        console.log('New Horizontal Word: ', getWord(this.current_horizontal));
+        console.log('New Vertical Word: ', getWord(this.current_vertical));
     }
 
     initializeWords(tile) {
+        console.log('Determining Surrounding Words');
         let v_index = 0, h_index = 0;
         
         // Check for submitted tiles below the current tile
@@ -332,7 +335,7 @@ export class Scrabble extends Phaser.Scene{
             if(!([x,tile.image.y] in this.submitted_tiles))
                 break;
             // Add the tile to the right of the current one to the end of the horizontal word.
-            let temp_tile = this.submitted_tiles[[tile.image.x, y]];
+            let temp_tile = this.submitted_tiles[[x, tile.image.y]];
             console.log('Tile: ', temp_tile.letter, ' being added at end of horizontal word');
             this.current_horizontal.push(temp_tile);
             x += OFFSET;
@@ -344,7 +347,7 @@ export class Scrabble extends Phaser.Scene{
             if(!([x,tile.image.y] in this.submitted_tiles))
                 break;
             // Add the tile to the left of the current one to the beginning of the horizontal word.
-            let temp_tile = this.submitted_tiles[[tile.image.x, y]];
+            let temp_tile = this.submitted_tiles[[x, tile.image.y]];
             console.log('Tile: ', temp_tile.letter, ' being added at beginning of horizontal word');
             this.current_horizontal.unshift(temp_tile);
             x -= OFFSET; h_index++;
@@ -377,10 +380,10 @@ export class Scrabble extends Phaser.Scene{
     // @TODO: Submit a word using the currently placed tiles
     submitWord() {
         if(this.current_horizontal.length != 0)
-            console.log('Submitting Horizontal Word: ', this.current_horizontal);
-
+            console.log('Submitting Horizontal Word: ', getWord(this.current_horizontal));
         if(this.current_vertical.length != 0)
-            console.log('Submiting Vertical Word: ', this.current_vertical);
+            console.log('Submiting Vertical Word: ', getWord(this.current_vertical));
+        
         // @TODO: Verify that the word is a correct word
 
         /* If this.current_word is correct:
@@ -394,7 +397,7 @@ export class Scrabble extends Phaser.Scene{
         this.makePermanent(this.current_vertical);
 
         this.current_horizontal = [];
-        this.current_veritcal = [];
+        this.current_vertical = [];
         this.direction = '';
         this.clickable_tiles = 0;
 
@@ -420,7 +423,7 @@ function isValidWord(word) {
 }
 
 // Determine whether the current square is a valid position to place a tile. If so, return positions of character in words.
-function isValidPosition(square, h_word, v_word, direction) {        
+function isValidPosition(square, h_word, v_word, direction) {     
     if(h_word.length == 0 && v_word.length == 0)
        return [0, 0];
 
@@ -457,6 +460,13 @@ function isValidPosition(square, h_word, v_word, direction) {
                 v_index = i; break;
         }
     }
-
     return [h_index, v_index];
+}
+
+function getWord(tile) {
+    let word = '';
+    for(let i = 0; i < tile.length; i++) {
+        word += tile[i].letter;
+    }
+    return word;
 }
