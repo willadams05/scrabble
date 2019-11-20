@@ -1,4 +1,5 @@
 import { CONSTANTS } from "../constants.js";
+import { Tile } from "../tile.js";
 
 export class Game extends Phaser.Scene{
     constructor() {
@@ -8,6 +9,8 @@ export class Game extends Phaser.Scene{
     }
 
     init() {
+        // The word currently being spelled on the board.
+        this.current_word = '';
         // The alphabet tile selected from the available pieces
         this.selected_tile = null;
         // An array of all tiles remaining in the game (not in-hand or played)
@@ -17,10 +20,19 @@ export class Game extends Phaser.Scene{
             ['O', 8], ['P', 2], ['Q', 1], ['R', 6], ['S', 4], ['T', 6], ['U', 4], 
             ['V', 2], ['W', 2], ['X', 1], ['Y', 2], ['Z', 1], ['Blank', 2]
         ];
+        // A dict of all tiles and their corresponding point values
+        this.tile_scores = {
+            'A': 1, 'B': 3, 'C': 3, 'D': 2, 'E': 1, 'F': 4, 'G': 2, 'H': 4,
+            'I': 1, 'J': 8, 'K': 5, 'L': 1, 'M': 3, 'N': 1, 'O': 1, 'P': 3,
+            'Q': 10, 'R': 1, 'S': 1, 'T': 1, 'U': 1, 'V': 4, 'W': 4, 'X': 8,
+            'Y': 4, 'Z': 10, 'Blank': 0
+        };
         // A list of the tiles currently available to the player
         this.current_tiles = [];
         // A list of the tiles currently being used to spell a new word
         this.placed_tiles = [];
+        // A list of the positions on the deck where a new tile needs to be loaded
+        this.new_positions = [0, 1, 2, 3, 4, 5, 6];
         // A list of board squares where a tile can be placed
         this.board = [];
     }
@@ -52,6 +64,11 @@ export class Game extends Phaser.Scene{
         socket.on('init', function (data) {
             console.log(data);
             socket.emit('success', 'Connection Successful');
+        });
+
+        // Load the tiles picked by the server
+        socket.on('load_tiles', function(data) {
+            this.loadTiles(data);
         });
 
         // Called when another player places a tile
@@ -97,13 +114,35 @@ export class Game extends Phaser.Scene{
         }
     }
 
-    // @TODO: Fill up an array of 7 tiles from the remaining un-used tiles
+    // @TODO: Fill up the array of current tiles from the remaining un-used tiles
     loadTiles() {
+        // @TODO: Have the server select tiles for each player and send back the corresponding indices
+        // socket.emit('load_tiles', this.remaining_tiles);
 
-        // Add listener for selecting a tile from the deck
-        // tile.on('pointerup', ()=>{
-        //     this.selectTile(tile);
-        // })
+        // @TODO: Move this to the server socket listener for load_tiles
+        for(let idx in this.new_positions) {
+            let letter = null;
+            // Try to select a random tile until one that has remaining tiles is chosen.
+            while(letter == null) {
+                let rand = Math.floor(Math.random() * 27);
+                if(this.remaining_tiles[rand][1] > 0) {
+                    letter = this.remaining_tiles[rand][0];
+                    console.log('Selected random tile: ', letter);
+                    // Subtract one from the remaining number of this tile
+                    this.remaining_tiles[rand][1]--;
+                }
+            }
+
+            // @TODO: Move this to the socket listener for load_tiles
+            // Create new Tile(letter, points)
+            let tile = new Tile(letter, this.tile_scores[letter]);
+            tile.image = this.add.image(170 + (idx * 60), 720, tile.letter).setInteractive();
+            tile.image.on('pointerup', ()=>{
+                // @TODO: Check if it was a left or right click
+                this.selectTile(tile);
+            })
+            this.current_tiles[idx] = tile;
+        }
     }
 
     // @TODO: Highlight the currently selected tile from the deck
@@ -112,6 +151,7 @@ export class Game extends Phaser.Scene{
             console.log("De-selecting tile: ", this.selected_tile);
         }
         console.log('Selecting tile: ', tile);
+        this.selected_tile = tile;
     }
 
     // @TODO: Places the currently selected tile in the correct square on the board.
@@ -119,6 +159,12 @@ export class Game extends Phaser.Scene{
         // Only place tile if one is currently selected
         if(this.selected_tile != null) {
             console.log('Placing tile: ', this.selected_tile)
+
+            // @TODO: Ensure that the tile is being placed in a valid position.
+
+            // @TODO: Set the x/y value of the placed tile, so it can be removed later if need be.
+
+            // @TODO: Add the tile to the current word being formed.
         }
         else {
             console.log('No Tile Selected')
@@ -129,12 +175,12 @@ export class Game extends Phaser.Scene{
     submitWord() {
         // @TODO: Verify that the word is a correct word
 
-        /* If the word is correct:
+        /* If this.current_word is correct:
                 clear placed_tiles
                 load new tiles into player deck
                 socket.emit(word_added, data) */
 
-        /* If the word is not correct:
+        /* If this.current_word is not correct:
                 socket.emit(rollback) */
     }
 }

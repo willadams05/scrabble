@@ -1,8 +1,8 @@
 export class Tile {
-    constructor(letter, points, image) {
+    constructor(letter, points) {
         this.letter = letter;
         this.points = points;
-        this.image = image;
+        this.image = null;
         this.x = 0, this.y = 0;
         this.placed = false;
     }
