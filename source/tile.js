@@ -3,7 +3,8 @@ export class Tile {
         this.letter = letter;
         this.points = points;
         this.image = null;
-        this.x = 0, this.y = 0;
-        this.placed = false;
+        this.origin_x = 0, this.origin_y = 0;
+        this.border = null;
+        this.clickable = true;
     }
 }
