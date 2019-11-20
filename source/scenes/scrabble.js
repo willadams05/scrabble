@@ -1,6 +1,9 @@
 import { CONSTANTS } from "../constants.js";
 import { Tile } from "../tile.js";
 
+// Each tile is 43x43 px with a 3px border surrounding it, so offset is 46 pixels.
+var OFFSET = 46;
+
 export class Scrabble extends Phaser.Scene{
     constructor() {
         super({
@@ -23,18 +26,24 @@ export class Scrabble extends Phaser.Scene{
             'Q': 10, 'R': 1, 'S': 1, 'T': 1, 'U': 1, 'V': 4, 'W': 4, 'X': 8,
             'Y': 4, 'Z': 10
         };
-        // The word currently being spelled on the board.
-        this.current_word = [];
+        // The horizontal word currently being spelled on the board.
+        this.current_horizontal = [];
+        // The vertical word currently being spelled on the board.
+        this.current_vertical = [];
         // The direction of the word currently being spelled
         this.direction = '';
+        // The number of tiles currently on the board that have not been submitted
+        this.clickable_tiles = 0;
+        // Flag so that clickable_tiles can be decreased once (instead of twice if removing from both veritcal/horizontal words)
+        this.decrease_clickable = false;
         // The alphabet tile selected from the available pieces
         this.selected_tile = null;
         // A list of the tiles currently available to the player
-        this.current_tiles = [];
-        // A list of the tiles currently being used to spell a new word
-        this.placed_tiles = [];
-        // A list of the positions on the deck where a new tile needs to be loaded
-        this.new_positions = [0, 1, 2, 3, 4, 5, 6];
+        this.current_tiles = [null, null, null, null, null, null, null];
+        // The deck index of the currently selected tile 
+        this.deck_index = -1;
+        // A dict of the tiles that have been submitted as words. (key: position tuple, value: tile object)
+        this.submitted_tiles = {};
         // A list of board squares where a tile can be placed
         this.board = [];
     }
@@ -42,7 +51,8 @@ export class Scrabble extends Phaser.Scene{
     preload() {
         this.load.image('board', 'source/assets/board.png');
         this.load.image('empty-square', 'source/assets/empty_square.png');
-        this.load.image('border', 'source/assets/border.png')
+        this.load.image('border', 'source/assets/border.png');
+        this.load.image('submit', 'source/assets/submit_button.png');
         for(let i = 0; i < 26; i++) {
             let letter = this.remaining_tiles[i][0];
             this.load.image(letter, 'source/assets/tiles/tile_' + letter + '.png');
@@ -63,7 +73,13 @@ export class Scrabble extends Phaser.Scene{
         this.loadSquares();
 
         // Load 7 random initial tiles from the list of remaining tiles
-        this.loadTiles();
+        this.getNewTiles();
+
+        // Add button to allow word submission
+        let submit = this.add.image(600, 720, 'submit').setInteractive();
+        submit.on('pointerup', ()=>{
+            this.submitWord();
+        })
     }
 
     // @TODO: Fill in events with proper functionality
@@ -75,7 +91,7 @@ export class Scrabble extends Phaser.Scene{
 
         // Load the tiles picked by the server
         socket.on('load_tiles', function(data) {
-            this.loadTiles(data);
+            this.getNewTiles(data);
         });
 
         // Called when another player places a tile
@@ -113,22 +129,26 @@ export class Scrabble extends Phaser.Scene{
                 })
                 this.board.push(square);
                 // Each tile is 43x43 px with a 3px white border separating them
-                x_pos += 46;
+                x_pos += OFFSET;
                 count++;
             }
             // Move to the next row of the board
-            y_pos += 46;
+            y_pos += OFFSET;
             x_pos = 27;
         }
     }
 
     // @TODO: Fill up the array of current tiles from the remaining un-used tiles
-    loadTiles() {
+    getNewTiles() {
         // @TODO: Have the server select tiles for each player and send back the corresponding indices
         // socket.emit('load_tiles', this.remaining_tiles);
 
         // @TODO: Move this to the server socket listener for load_tiles
-        for(let idx in this.new_positions) {
+        for(let i = 0; i < this.current_tiles.length; i++) {
+            // Only load the tile if there is an empty spot in the deck. 
+            if(this.current_tiles[i] != null)
+                continue;
+
             let letter = null;
             // Try to select a random tile until one that has remaining tiles is chosen.
             while(letter == null) {
@@ -144,7 +164,7 @@ export class Scrabble extends Phaser.Scene{
             // @TODO: Move this to the socket listener for load_tiles
             // Create new Tile(letter, points)
             let tile = new Tile(letter, this.tile_scores[letter]);
-            let x = 170 + (idx * 60), y = 720; 
+            let x = 120 + (i * 55), y = 720; 
             tile.origin_x = x; tile.origin_y = y;
             tile.image = this.add.image(x, y, tile.letter).setInteractive();
             tile.image.on('pointerup', ()=>{
@@ -152,57 +172,79 @@ export class Scrabble extends Phaser.Scene{
                     // On left-click, select the currently clicked tile
                     if(this.scene.systems.input.activePointer.leftButtonReleased()) {
                         this.deselectTile();
-                        this.selectTile(tile);
+                        this.selectTile(tile, i);
                     }
                     // On right-click, de-select and remove tile from board
                     else {
                         this.deselectTile();
-                        this.removeTile(tile);
+                        this.removeTile(tile, i);
                     }
                 }
             })
-            this.current_tiles[idx] = tile;
+            this.current_tiles[i] = tile;
         }
     }
 
     // Un-highlight the currently selected tile
     deselectTile() {
         if(this.selected_tile != null) {
-            console.log("De-selecting tile: ", this.selected_tile);
             // Remove highlight around placed tile
             this.selected_tile.border.destroy();
+            this.deck_index = -1;
         }
     }
 
     // Highlight the currently selected tile from the deck
-    selectTile(tile) {
-        console.log('Selecting tile: ', tile);
+    selectTile(tile, idx) {
         tile.border = this.add.image(tile.image.x, tile.image.y, 'border');
         this.selected_tile = tile;
+        this.deck_index = idx;
     }
 
     // Remove a tile from the board (currently only last tile can be removed)
-    removeTile(tile) {
+    removeTile(tile, deck_index) {
+        this.removeFromWord(tile, this.current_horizontal);
+        this.removeFromWord(tile, this.current_vertical);
+
+        // If a tile was removed from one of the words, decrease the # of clickable tiles
+        if(this.decrease_clickable) {
+            this.clickable_tiles--;
+            this.decrease_clickable = false;
+        }
+
+        // Place the tile back in the deck
         tile.image.x = tile.origin_x;
         tile.image.y = tile.origin_y;
-        this.placed_tiles.pop();
-        // Allow the new last tile to be removed
-        if(this.placed_tiles.length != 0)
-            this.placed_tiles[this.placed_tiles.length-1].clickable = true;
-        
-        if(this.placed_tiles.length < 2)
-            this.direction = '';
+        this.current_tiles[deck_index] = tile;
 
-        this.current_word.pop();
+        // If no more clickable tiles are on the board, clear the current words.
+        if(this.clickable_tiles == 0) {
+            this.current_horizontal = [];
+            this.current_vertical = [];
+        }
+
+        // If the word length is only 1 character, the direction is unknown.
+        if(this.current_horizontal.length < 2 && this.current_vertical.length)
+            this.direction = '';
     }
 
-    // @TODO: Places the currently selected tile in the correct square on the board.
+    // Replace a specific tile in a word with null
+    removeFromWord(tile, word) {
+        for(let i; i < word.length; i++) {
+            if(tile.image.x == word[i].image.x && tile.image.y == word[i].image.y) {
+                this.current_horizontal.splice(i, 1, null);
+                this.decrease_clickable = true;
+            }
+        }
+    }
+
+    // Places the currently selected tile in the correct square on the board.
     placeTile(square) {
         // Only place tile if one is currently selected
         if(this.selected_tile != null) {
-
+            let word_index = isValidPosition(square, this.current_horizontal, this.current_vertical, this.direction);
             // Ensure that the tile is being placed in a valid position.
-            if(isValidPosition(square, this.placed_tiles, this.direction)) {
+            if(word_index != [-1, -1]) {
                 console.log('Placing tile at: ', square.x, square.y);
                 this.selected_tile.image.x = square.x;
                 this.selected_tile.image.y = square.y;
@@ -210,21 +252,19 @@ export class Scrabble extends Phaser.Scene{
                 // Remove highlight around placed tile
                 this.selected_tile.border.destroy();
 
-                // @TODO: Add the tile to the current word being formed.
-                this.current_word.push(this.selected_tile.letter);
-                console.log('Current Word', this.current_word);
+                // Determine the new current word(s) according to where the tile was placed
+                this.setCurrentWord(this.selected_tile, word_index);
 
-                // Make the previously placed tile un-clickable 
-                if(this.placed_tiles.length != 0)
-                    this.placed_tiles[this.placed_tiles.length-1].clickable = false;
+                // Increase the number of clickable tiles on the screen (must do after setCurrentWord)
+                this.clickable_tiles++;
 
-                // Add the tile to the currently placed tiles
-                this.placed_tiles.push(this.selected_tile);
+                // If two tiles are going in a certain direction, set this as the current word direction.
+                // if(this.current_horizontal.length == 2 || this.current_vertical.length == 2)
+                this.setDirection();
+                console.log('Current Direction: ', this.direction);
 
-                if(this.placed_tiles.length == 2)
-                    this.setDirection();
-
-                console.log('Current Direction', this.direction);
+                // Remove the placed tile from the deck
+                this.current_tiles[this.deck_index] = null;
 
                 this.selected_tile = null;
             }
@@ -235,52 +275,188 @@ export class Scrabble extends Phaser.Scene{
             console.log('No Tile Selected')
     }
 
+    // Sets the word(s) being currently spelled according to the placement of the most recent tile.
+    setCurrentWord(tile, word_index) {
+        console.log('Word Indices: ', word_index);
+        // If this is the first tile being submitted, determine if this tile is adjacent to any previously submitted tiles
+        if(this.clickable_tiles == 0 && Object.keys(this.submitted_tiles).length != 0) {
+            this.initializeWords(tile);
+        }
+        else {
+            let h_index = word_index[0], v_index = word_index[1];
+            // Add the tile to the current word(s) being formed.
+            if(h_index != -1) {
+                console.log('Tile: ', this.selected_tile.letter, ' being added at horizontal index: ', h_index)
+                this.current_horizontal.splice(h_index, 0, this.selected_tile);
+            }
+            if(v_index != -1) {
+                console.log('Tile: ', this.selected_tile.letter, ' being added at vertical index: ', v_index)
+                this.current_vertical.splice(v_index, 0, this.selected_tile);
+            }
+        }
+        
+        console.log('Current Horizontal Word: ', this.current_horizontal);
+        console.log('Current Vertical Word: ', this.current_vertical);
+    }
+
+    initializeWords(tile) {
+        let v_index = 0, h_index = 0;
+        
+        // Check for submitted tiles below the current tile
+        let y = tile.image.y + OFFSET;
+        while(true) {
+            if(!([tile.image.x,y] in this.submitted_tiles))
+                break;
+            // Add the tile below the current one to the end of the vertical word.
+            let temp_tile = this.submitted_tiles[[tile.image.x, y]];
+            console.log('Tile: ', temp_tile.letter, ' being added at end of vertical word');
+            this.current_vertical.push(temp_tile);
+            y += OFFSET;
+        }
+        
+        // Check for submitted tiles above the current tile
+        y = tile.image.y - OFFSET;
+        while(true) {
+            if(!([tile.image.x,y] in this.submitted_tiles))
+                break;
+            // Add the tile above the current one to the beginning of the vertical word.
+            let temp_tile = this.submitted_tiles[[tile.image.x, y]];
+            console.log('Tile: ', temp_tile.letter, ' being added at beginning of vertical word');
+            this.current_vertical.unshift(temp_tile);
+            y -= OFFSET; v_index++;
+        }
+
+        // Check for submited tiles to the right of the current tile
+        let x = tile.image.x + OFFSET;
+        while(true) {
+            if(!([x,tile.image.y] in this.submitted_tiles))
+                break;
+            // Add the tile to the right of the current one to the end of the horizontal word.
+            let temp_tile = this.submitted_tiles[[tile.image.x, y]];
+            console.log('Tile: ', temp_tile.letter, ' being added at end of horizontal word');
+            this.current_horizontal.push(temp_tile);
+            x += OFFSET;
+        }
+
+        // Check for submited tiles to the left of the current tile
+        x = tile.image.x - OFFSET;
+        while(true) {
+            if(!([x,tile.image.y] in this.submitted_tiles))
+                break;
+            // Add the tile to the left of the current one to the beginning of the horizontal word.
+            let temp_tile = this.submitted_tiles[[tile.image.x, y]];
+            console.log('Tile: ', temp_tile.letter, ' being added at beginning of horizontal word');
+            this.current_horizontal.unshift(temp_tile);
+            x -= OFFSET; h_index++;
+        }
+
+        // Add the tile to the current word being formed.
+        console.log('Tile: ', this.selected_tile.letter, ' being added at horizontal index: ', h_index)
+        this.current_horizontal.splice(h_index, 0, this.selected_tile);
+        console.log('Tile: ', this.selected_tile.letter, ' being added at vertical index: ', v_index)
+        this.current_vertical.splice(v_index, 0, this.selected_tile);
+    }
+
     // Set the direction that the tiles must be placed in for the current word.
+    // @TODO: Fix this
     setDirection() {
-        let tile1 = this.placed_tiles[0]
-        let tile2 = this.placed_tiles[1];
-        if(tile1.image.x != tile2.image.x)
+        if(this.current_horizontal.length >= 2 && this.current_vertical.length < 2) {
             this.direction = 'horizontal';
-        else
+            this.current_vertical = [];
+        }
+        else if(this.current_vertical.length >= 2 && this.current_horizontal.length < 2) {
             this.direction = 'vertical';
+            this.current_horizontal = [];
+        }
+        else if(this.current_horizontal.length >= 2 && this.current_vertical.length >=2)
+            this.direction = 'both';
+        else
+            this.direction == '';
     }
 
     // @TODO: Submit a word using the currently placed tiles
     submitWord() {
+        if(this.current_horizontal.length != 0)
+            console.log('Submitting Horizontal Word: ', this.current_horizontal);
+
+        if(this.current_vertical.length != 0)
+            console.log('Submiting Vertical Word: ', this.current_vertical);
         // @TODO: Verify that the word is a correct word
 
         /* If this.current_word is correct:
-                clear placed_tiles
-                load new tiles into player deck
+                clear words
+                load new tiles into player deck (socket.emit(load_tiles, data))
                 socket.emit(word_added, data) */
 
-        this.placed_tiles = [];
+        this.getNewTiles();
+
+        this.makePermanent(this.current_horizontal);
+        this.makePermanent(this.current_vertical);
+
+        this.current_horizontal = [];
+        this.current_veritcal = [];
         this.direction = '';
+        this.clickable_tiles = 0;
 
         /* If this.current_word is not correct:
                 socket.emit(rollback) */
     }
+
+    // Set all of the tiles in current word to be unclickable and store them in submitted_tiles
+    makePermanent(word) {
+        for(let i = 0; i < word.length; i++) {
+            let tile = word[i];
+            tile.clickable = false;
+            let x = tile.image.x, y = tile.image.y;
+            // Store the submitted tile in the dict with its position as the key.
+            this.submitted_tiles[[x,y]] = tile;
+        }
+    }
 }
 
+// @TODO: Use some API to determine whether the current word exists in the Scrabble dictionary
 function isValidWord(word) {
 
 }
 
-// Determine whether the current square is a valid position to place a tile
-function isValidPosition(square, placed_tiles, direction) {
-    console.log('Currently Placed Tiles: ', placed_tiles);
-    if(placed_tiles.length == 0)
-       return true;
+// Determine whether the current square is a valid position to place a tile. If so, return positions of character in words.
+function isValidPosition(square, h_word, v_word, direction) {        
+    if(h_word.length == 0 && v_word.length == 0)
+       return [0, 0];
 
-    let last_tile = placed_tiles[placed_tiles.length-1];
-    // Correct if word is spelled horizontally and tile is immediately to the right of the last tile placed
-    if(direction == 'horizontal' || direction == '') {
-        if(last_tile.image.x + 46 == square.x && last_tile.image.y == square.y)
-            return true;
+    let h_index = -1, v_index = -1;
+
+    if(direction == 'horizontal' || direction == '' || direction == 'both') {
+        let first_tile = h_word[0], last_tile = h_word[h_word.length-1];
+        // Correct if current tile is placed at the beginning of the word
+        if(first_tile.image.x - OFFSET == square.x && first_tile.image.y == square.y)
+            h_index = 0;
+        // Correct if current tile is placed at the end of the word
+        else if(last_tile.image.x + OFFSET == square.x && last_tile.image.y == square.y)
+            h_index = h_word.length;
+        // Correct if current tile is placed in the blank space in the middle of a word
+        else {
+            for(let i = 0; i < h_word.length; i++) {
+                if(h_word[i] == null && square.x == h_word[i-1].image.x + OFFSET)
+                    h_index = i; break;
+            }
+        }
     }
-    if(direction == 'vertical' || direction == '') {
-        if(last_tile.image.y + 46 == square.y && last_tile.image.x == square.x)
-            return true;
+
+    if(direction == 'vertical' || direction == '' || direction == 'both') {
+        let first_tile = v_word[0], last_tile = v_word[v_word.length-1];
+        // Correct if current tile is placed on the top of the word
+        if(first_tile.image.x == square.x && first_tile.image.y - OFFSET == square.y)
+            v_index = 0;
+        // Correct if current tile is placed on the bottom of the word
+        if(last_tile.image.x == square.x && last_tile.image.y + OFFSET == square.y)
+            v_index = v_word.length;
+        // Correct if current tile is placed in the blank space in the middle of a word
+        for(let i = 0; i < h_word.length; i++) {
+            if(v_word[i] == null && square.x == v_word[i-1].image.y + OFFSET)
+                v_index = i; break;
+        }
     }
-    return false;
+
+    return [h_index, v_index];
 }
