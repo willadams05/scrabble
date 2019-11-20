@@ -28,8 +28,10 @@ export class Game extends Phaser.Scene{
     preload() {
         this.load.image('board', 'source/assets/board.png');
         this.load.image('empty-square', 'source/assets/empty_square.png');
-        // @TODO: Load images for each tile
-        // @TODO: Load tile holder image at bottom of game board
+        for(let i = 0; i < 27; i++) {
+            let letter = this.remaining_tiles[i][0];
+            this.load.image(letter, 'source/assets/tiles/tile_' + letter + '.png');
+        }
     }
 
     create() {
