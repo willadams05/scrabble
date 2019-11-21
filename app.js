@@ -30,7 +30,8 @@ io.on('connection', function (socket) {
     console.log(data);
     connections.push(socket.id);
     console.log('Current Connections:', connections);
-    if(connections.length > 1)
+    // @TODO: Change back to >1
+    if(connections.length >= 1)
       // io.emit to broadcast to each of the connected clients
       io.emit('opponent_connected');
   });
@@ -54,18 +55,14 @@ io.on('connection', function (socket) {
     console.log('Checking Words: ', data);
     for(let i = 0; i < data.length; i++) {
       let word = data[i];
-      console.log('Checking Word: ', word);
-      console.log(words.check(word));
-      if(words.check(word) == true) {
-        console.log('Word: ', word, ' Is Valid');
-        socket.emit('word_added', word);
-      }
-      else {
+      if(words.check(word) == false) {
         console.log('Word: ', word, ' Is Invalid');
         socket.emit('rollback');
-        break;
+        return;
       }
+      console.log('Word: ', word, ' Is Valid');
     }
+    socket.emit('words_added', data);
   });
 
   socket.on('rollback', function (data) {
