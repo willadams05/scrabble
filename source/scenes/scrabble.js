@@ -109,7 +109,7 @@ export class Scrabble extends Phaser.Scene{
             console.log('Words Added: ', data);
 
             // Load as many new tiles as were used on the last successful word
-            this.getNewTiles(this.clickable_tiles);
+            socket.emit('load_tiles', this.clickable_tiles);
 
             // Set all of the tiles used for the last word to unclickable
             this.makePermanent(this.current_horizontal);
@@ -233,9 +233,15 @@ export class Scrabble extends Phaser.Scene{
             this.current_vertical = [];
         }
 
-        // If the word length is only 1 character, the direction is unknown.
-        if(this.current_horizontal.length < 2 && this.current_vertical.length)
+        // If the word length is only 1 character, the direction is unknown. So, load both words
+        if(this.current_horizontal.length == 1 && this.current_vertical.length < 2) {
             this.direction = '';
+            this.current_vertical.push(this.current_horizontal[0]);
+        }
+        else if(this.current_vertical.length == 1 && this.current_horizontal.length < 2) {
+            this.direction = '';
+            this.current_horizontal.push(this.current_vertical[0]);
+        }
 
         console.log('New Horizontal Word: ', getWord(this.current_horizontal));
         console.log('New Vertical Word: ', getWord(this.current_vertical));
@@ -246,22 +252,23 @@ export class Scrabble extends Phaser.Scene{
         let null_count = 0;
         let temp_word = word.slice();
         for(let i = 0; i < word.length; i++) {
-            console.log('word: ', word, 'temp_word: ', temp_word);
             if(word[i] == null) {
                 null_count++;
                 continue;
             }
-            if(i == 0)
+            // If the tile is the first tile of the word, remove first element of word array
+            if(i == 0 && tile.image.x == word[i].image.x && tile.image.y == word[i].image.y)
                 temp_word.unshift();
-            else if(i == word.length-1)
+            // If the tile is the last tile of the word, pop last element of word array
+            else if(i == word.length-1 && tile.image.x == word[i].image.x && tile.image.y == word[i].image.y)
                 temp_word.pop();
-            // If the tile is in the middle of the word, replace with null.
+            // If the tile is in the middle of the word, replace with null
             else if(tile.image.x == word[i].image.x && tile.image.y == word[i].image.y) {
-                // @TODO: Fix bug with tile removal not removing tile from end of word (maybe only if direction = both)
                 temp_word.splice(i, 1, null);
                 null_count++;
                 this.decrease_clickable = true;
             }
+            // console.log('word: ', word, 'temp_word: ', temp_word);
         }
         if(dir == 'horizontal')
             this.current_horizontal = temp_word;
@@ -288,9 +295,9 @@ export class Scrabble extends Phaser.Scene{
 
                 // Determine the new current word(s) according to where the tile was placed
                 // @TODO: Currently only 1 vertical / 1 horizontal word is possible, need to extend to more
-                this.setCurrentWord(this.selected_tile, word_index);
+                this.addToWord(this.selected_tile, word_index);
 
-                // Increase the number of clickable tiles on the screen (must do after setCurrentWord)
+                // Increase the number of clickable tiles on the screen (must do addToWord)
                 this.clickable_tiles++;
 
                 // If two tiles are going in a certain direction, set this as the current word direction.
@@ -314,7 +321,7 @@ export class Scrabble extends Phaser.Scene{
     }
 
     // Sets the word(s) being currently spelled according to the placement of the most recent tile.
-    setCurrentWord(tile, word_index) {
+    addToWord(tile, word_index) {
         console.log('Word Indices: ', word_index);
         // If this is the first tile being submitted, determine if this tile is adjacent to any previously submitted tiles
         if(this.clickable_tiles == 0 && Object.keys(this.submitted_tiles).length != 0) {
