@@ -3,8 +3,7 @@ import { Tile } from "../tile.js";
 
 // Each tile is 43x43 px with a 3px border surrounding it, so offset is 46 pixels.
 var OFFSET = 46;
-
-var socket = io.connect('http://localhost:3000');
+var socket;
 
 export class Scrabble extends Phaser.Scene{
     constructor() {
@@ -14,13 +13,6 @@ export class Scrabble extends Phaser.Scene{
     }
 
     init() {
-        // An array of all tiles remaining in the game (not in-hand or played)
-        this.remaining_tiles = [
-            ['A', 9], ['B', 2], ['C', 2], ['D', 4], ['E', 12], ['F', 2], ['G', 3], 
-            ['H', 2], ['I', 9], ['J', 1], ['K', 1], ['L', 4], ['M', 2], ['N', 6], 
-            ['O', 8], ['P', 2], ['Q', 1], ['R', 6], ['S', 4], ['T', 6], ['U', 4], 
-            ['V', 2], ['W', 2], ['X', 1], ['Y', 2], ['Z', 1]
-        ];
         // A dict of all tiles and their corresponding point values
         this.tile_scores = {
             'A': 1, 'B': 3, 'C': 3, 'D': 2, 'E': 1, 'F': 4, 'G': 2, 'H': 4,
@@ -55,8 +47,8 @@ export class Scrabble extends Phaser.Scene{
         this.load.image('empty-square', 'source/assets/empty_square.png');
         this.load.image('border', 'source/assets/border.png');
         this.load.image('submit', 'source/assets/submit_button.png');
-        for(let i = 0; i < 26; i++) {
-            let letter = this.remaining_tiles[i][0];
+        for(let i = 65; i < 91; i++) {
+            let letter = String.fromCharCode(i);
             this.load.image(letter, 'source/assets/tiles/tile_' + letter + '.png');
         }
     }
@@ -67,6 +59,7 @@ export class Scrabble extends Phaser.Scene{
         });
 
         // Set socket events
+        socket = io.connect('http://localhost:3000');
         this.setSocketEvents();
 
         // Display game board and load buttons for the board squares 
@@ -74,7 +67,7 @@ export class Scrabble extends Phaser.Scene{
         this.loadSquares();
 
         // Load 7 random initial tiles from the list of remaining tiles
-        this.getNewTiles();
+        // this.getNewTiles();
 
         // Add button to allow word submission
         let submit = this.add.image(600, 720, 'submit').setInteractive();
@@ -85,33 +78,39 @@ export class Scrabble extends Phaser.Scene{
 
     // @TODO: Fill in events with proper functionality
     setSocketEvents() {
-        socket.on('init', function (data) {
+        socket.on('init', function(data) {
             console.log(data);
             socket.emit('success', 'Connection Successful');
         });
 
+        socket.on('opponent_connected', function(data) {
+            console.log('Requesting Tiles From Server');
+            socket.emit('load_tiles', 7);
+        });
+
         // Load the tiles picked by the server
-        socket.on('load_tiles', function(data) {
+        socket.on('receive_tiles', (data) =>{
+            console.log('Received Tiles From Server:', data);
             this.getNewTiles(data);
         });
 
         // Called when another player places a tile
-        socket.on('tile_placed', function(data) {
+        socket.on('tile_placed', function (data) {
             console.log('Tile Placed: ', data);
         });
         
         // Called when another player removes a tile
-        socket.on('tile_removed', function(data) {
+        socket.on('tile_removed', function (data) {
             console.log('Tile Removed: ', data);
         });
         
         // Called when another player submits a correct word
-        socket.on('word_added', function(data) {
+        socket.on('word_added', function (data) {
             console.log('Word Added: ', data);
         });
         
         // Called when another player submits an incorrect word (rollback is initiated)
-        socket.on('rollback', function(data) {
+        socket.on('rollback', function (data) {
             console.log('INVALID WORD -- ROLLING BACK');
         });
     }
@@ -140,28 +139,14 @@ export class Scrabble extends Phaser.Scene{
     }
 
     // Fill up the array of current tiles from the remaining un-used tiles
-    getNewTiles() {
-        // @TODO: Have the server select tiles for each player and send back the corresponding indices
-        // socket.emit('load_tiles', this.remaining_tiles);
-
-        // @TODO: Move this to the server socket listener for load_tiles
+    getNewTiles(letters) {
+        let count = 0;
         for(let i = 0; i < this.current_tiles.length; i++) {
             // Only load the tile if there is an empty spot in the deck. 
             if(this.current_tiles[i] != null)
                 continue;
 
-            let letter = null;
-            // Try to select a random tile until one that has remaining tiles is chosen.
-            while(letter == null) {
-                let rand = Math.floor(Math.random() * 26);
-                if(this.remaining_tiles[rand][1] > 0) {
-                    letter = this.remaining_tiles[rand][0];
-                    console.log('Selected random tile: ', letter);
-                    // Subtract one from the remaining number of this tile
-                    this.remaining_tiles[rand][1]--;
-                }
-            }
-
+            let letter = letters[count++];
             // @TODO: Move this to the socket listener for load_tiles
             // Create new Tile(letter, points)
             let tile = new Tile(letter, this.tile_scores[letter]);
