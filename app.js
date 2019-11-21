@@ -33,8 +33,8 @@ io.on('connection', function (socket) {
     console.log(data);
     connections.push(socket.id);
     console.log('Current Connections:', connections);
-    // @TODO: Change back to >1
-    if(connections.length >= 1)
+    // Can change this to >=1 for testing with 1 client
+    if(connections.length > 1)
       // io.emit to broadcast to each of the connected clients
       io.emit('opponent_connected');
   });
@@ -46,15 +46,21 @@ io.on('connection', function (socket) {
     console.log('Remaining Tiles:', remaining_tiles);
   });
 
-  socket.on('tile_placed', function (data) {
-    console.log('Tile Placed: ', data);
+  // Client tells the server that it has placed a tile on the board
+  socket.on('tile_placed', function (tile) {
+    console.log(socket.id, 'Placed Tile:', tile.letter);
+    // Server broadcasts to all other clients (not including sender) to add the tile
+    socket.broadcast.emit('tile_placed', tile);
   });
 
-  socket.on('tile_removed', function (data) {
-    console.log('Tile Removed: ', data);
+  // Client tells t he server that it has removed a tile from the board
+  socket.on('tile_removed', function (tile) {
+    console.log(socket.id, 'Removed Tile:', tile.letter);
+    // Server broadcasts to all other clients (not including sender) to remove the tile
+    socket.broadcast.emit('tile_removed', tile);
   });
 
-  socket.on('word_submitted', function (data) {
+  socket.on('words_submitted', function (data) {
     console.log('Checking Words: ', data);
     for(let i = 0; i < data.length; i++) {
       let word = data[i];
@@ -65,7 +71,10 @@ io.on('connection', function (socket) {
       }
       console.log('Word: ', word, ' Is Valid');
     }
+    // Let the sending client know that they submitted a valid word
     socket.emit('words_added', data);
+    // Let the other clients know that their opponent submitted a valid word
+    socket.broadcast.emit('opponent_words_added', data);
   });
 
   socket.on('rollback', function (data) {
