@@ -4,6 +4,8 @@ import { Tile } from "../tile.js";
 // Each tile is 43x43 px with a 3px border surrounding it, so offset is 46 pixels.
 var OFFSET = 46;
 
+var socket = io.connect('http://localhost:3000');
+
 export class Scrabble extends Phaser.Scene{
     constructor() {
         super({
@@ -65,8 +67,7 @@ export class Scrabble extends Phaser.Scene{
         });
 
         // Set socket events
-        var socket = io.connect('http://localhost:3000');
-        this.setSocketEvents(socket);
+        this.setSocketEvents();
 
         // Display game board and load buttons for the board squares 
         this.add.image(350, 350, 'board');
@@ -83,7 +84,7 @@ export class Scrabble extends Phaser.Scene{
     }
 
     // @TODO: Fill in events with proper functionality
-    setSocketEvents(socket) {
+    setSocketEvents() {
         socket.on('init', function (data) {
             console.log(data);
             socket.emit('success', 'Connection Successful');
@@ -111,7 +112,7 @@ export class Scrabble extends Phaser.Scene{
         
         // Called when another player submits an incorrect word (rollback is initiated)
         socket.on('rollback', function(data) {
-            console.log('Rollback: ', data);
+            console.log('INVALID WORD -- ROLLING BACK');
         });
     }
     
@@ -138,7 +139,7 @@ export class Scrabble extends Phaser.Scene{
         }
     }
 
-    // @TODO: Fill up the array of current tiles from the remaining un-used tiles
+    // Fill up the array of current tiles from the remaining un-used tiles
     getNewTiles() {
         // @TODO: Have the server select tiles for each player and send back the corresponding indices
         // socket.emit('load_tiles', this.remaining_tiles);
@@ -232,6 +233,7 @@ export class Scrabble extends Phaser.Scene{
     removeFromWord(tile, word) {
         for(let i; i < word.length; i++) {
             if(tile.image.x == word[i].image.x && tile.image.y == word[i].image.y) {
+                // @TODO: Fix bug with tile removal not removing tile from end of word (maybe only if direction = both)
                 this.current_horizontal.splice(i, 1, null);
                 this.decrease_clickable = true;
             }
@@ -253,6 +255,7 @@ export class Scrabble extends Phaser.Scene{
                 this.selected_tile.border.destroy();
 
                 // Determine the new current word(s) according to where the tile was placed
+                // @TODO: Currently only 1 vertical / 1 horizontal word is possible, need to extend to more
                 this.setCurrentWord(this.selected_tile, word_index);
 
                 // Increase the number of clickable tiles on the screen (must do after setCurrentWord)
@@ -361,7 +364,6 @@ export class Scrabble extends Phaser.Scene{
     }
 
     // Set the direction that the tiles must be placed in for the current word.
-    // @TODO: Fix this
     setDirection() {
         if(this.current_horizontal.length >= 2 && this.current_vertical.length < 2) {
             this.direction = 'horizontal';
@@ -377,20 +379,24 @@ export class Scrabble extends Phaser.Scene{
             this.direction == '';
     }
 
-    // @TODO: Submit a word using the currently placed tiles
+    // Submit a word using the currently placed tiles
     submitWord() {
-        if(this.current_horizontal.length != 0)
-            console.log('Submitting Horizontal Word: ', getWord(this.current_horizontal));
-        if(this.current_vertical.length != 0)
-            console.log('Submiting Vertical Word: ', getWord(this.current_vertical));
+        let words = [], word_count = 0;
+        if(this.current_horizontal.length != 0) {
+            words[word_count] = getWord(this.current_horizontal);
+            console.log('Submitting Horizontal Word: ', words[word_count]);
+            word_count++;
+        }
+        if(this.current_vertical.length != 0) {
+            words[word_count] = getWord(this.current_vertical);
+            console.log('Submiting Vertical Word: ', words[word_count]);
+            word_count++;
+        }
         
-        // @TODO: Verify that the word is a correct word
+        // Verify that the word is a correct word
+        socket.emit('word_submitted', words);
 
-        /* If this.current_word is correct:
-                clear words
-                load new tiles into player deck (socket.emit(load_tiles, data))
-                socket.emit(word_added, data) */
-
+        // @TODO: If this.current_word is correct:
         this.getNewTiles();
 
         this.makePermanent(this.current_horizontal);
@@ -400,9 +406,6 @@ export class Scrabble extends Phaser.Scene{
         this.current_vertical = [];
         this.direction = '';
         this.clickable_tiles = 0;
-
-        /* If this.current_word is not correct:
-                socket.emit(rollback) */
     }
 
     // Set all of the tiles in current word to be unclickable and store them in submitted_tiles
@@ -428,6 +431,16 @@ function isValidPosition(square, h_word, v_word, direction) {
        return [0, 0];
 
     let h_index = -1, v_index = -1;
+
+    /* @TODO: Fix for the following case:    
+             U
+            AN
+            PI
+            P
+            L
+            E
+        horizontal words: AN, PI
+        vertical word: UNI              */
 
     if(direction == 'horizontal' || direction == '' || direction == 'both') {
         let first_tile = h_word[0], last_tile = h_word[h_word.length-1];
@@ -468,5 +481,5 @@ function getWord(tile) {
     for(let i = 0; i < tile.length; i++) {
         word += tile[i].letter;
     }
-    return word;
+    return word.toLowerCase();
 }

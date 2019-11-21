@@ -18,7 +18,7 @@ export class Menu extends Phaser.Scene{
     create(){
         let playButton = this.add.image(350, 350, 'play-button').setInteractive();
         playButton.on("pointerup", ()=>{
-            console.log("Starting Game")
+            console.log("Starting Scrabble")
             this.scene.start(CONSTANTS.SCENES.SCRABBLE);
         })
     }
