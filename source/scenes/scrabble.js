@@ -350,20 +350,20 @@ export class Scrabble extends Phaser.Scene{
     // Find the surrounding submitted tiles that are included in the current word.
     addSurroundingTiles(tile, add_tile) {
         console.log('Determining Surrounding Words Around', tile.image.x, tile.image.y);
-        let v_index = 0, h_index = 0;
-
-        // Check for submitted tiles below the current tile (doesn't change tile index from 0)
+        let v_index = this.current_vertical.length, h_index = this.current_horizontal.length;
+        
+        // Check for submitted tiles below the current tile
         let x = tile.image.x, y = tile.image.y + OFFSET;
-        findSurrounding(x, y, OFFSET, this.current_vertical, 'vertical', this.submitted_tiles, true);
+        findSurrounding(x, y, OFFSET, this.current_vertical, 'vertical', v_index, this.submitted_tiles, false);
         // Check for submitted tiles above the current tile
         y = tile.image.y - OFFSET;
-        v_index = findSurrounding(x, y, OFFSET*-1, this.current_vertical, 'vertical', this.submitted_tiles, false);
+        v_index = findSurrounding(x, y, OFFSET*-1, this.current_vertical, 'vertical', v_index, this.submitted_tiles, true);
         // Check for submited tiles to the right of the current tile
         x = tile.image.x + OFFSET, y = tile.image.y;
-        findSurrounding(x, y, OFFSET, this.current_horizontal, 'horizontal', this.submitted_tiles, false);
+        findSurrounding(x, y, OFFSET, this.current_horizontal, 'horizontal', h_index, this.submitted_tiles, false);
         // Check for submitted tiles to the left of the current tile
         x = tile.image.x - OFFSET;
-        h_index = findSurrounding(x, y, OFFSET*-1, this.current_horizontal, 'horizontal', this.submitted_tiles, true);
+        h_index = findSurrounding(x, y, OFFSET*-1, this.current_horizontal, 'horizontal', h_index, this.submitted_tiles, true);
 
         // Add the tile to the current word being formed.
         if(add_tile) {
@@ -513,8 +513,7 @@ function getWordIndex(square, word, dir) {
 }
 
 // Helper function that finds adjacent tiles in a specific direction from the current tile
-function findSurrounding(x, y, off, word, dir, submitted, beginning) {
-    let index = 0;
+function findSurrounding(x, y, off, word, dir, index, submitted, increase_index) {
     while(true) {
         if(!([x,y] in submitted))
             break;
@@ -525,11 +524,12 @@ function findSurrounding(x, y, off, word, dir, submitted, beginning) {
             break;
         }
         console.log('Submitted Tile: ', temp_tile.letter, ' Being Added To Word At Index:', index);
-        if(beginning) {
-            word.unshift(temp_tile); index++;
+        if(increase_index) {
+            word.unshift(temp_tile);
+            index++;
         }
         else
-            word.push(temp_tile);
+            word.splice(index, 0, temp_tile);
         x = (dir == 'horizontal') ? x + off : x;
         y = (dir == 'vertical') ? y + off : y;
     }

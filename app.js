@@ -15,11 +15,14 @@ app.use(express.static(__dirname));
 
 // An array of all tiles remaining in the game (not in-hand or played)
 var remaining_tiles = [
-  ['A', 9], ['B', 2], ['C', 2], ['D', 4], ['E', 12], ['F', 2], ['G', 3], 
-  ['H', 2], ['I', 9], ['J', 1], ['K', 1], ['L', 4], ['M', 2], ['N', 6], 
-  ['O', 8], ['P', 2], ['Q', 1], ['R', 6], ['S', 4], ['T', 6], ['U', 4], 
-  ['V', 2], ['W', 2], ['X', 1], ['Y', 2], ['Z', 1]
+  'A','A','A','A','A','A','A','A','A','B','B','C','C','D','D','D',
+  'D','E','E','E','E','E','E','E','E','E','E','E','E','F','F','G',
+  'G','G','H','H','I','I','I','I','I','I','I','I','I','J','K','L',
+  'L','L','L','M','M','N','N','N','N','N','N','O','O','O','O','O',
+  'O','O','O','P','P','Q','R','R','R','R','R','R','S','S','S','S',
+  'T','T','T','T','T','T','U','U','U','U','V','V','X','Y','Y','Z'
 ];
+
 var connections = [];
 
 io.on('connection', function (socket) {
@@ -73,21 +76,9 @@ io.on('connection', function (socket) {
 function load_letters(num) {
   let letters = [];
   for(let i = 0; i < num; i++) {
-    letters[i] = generate_letter();
+    let idx = Math.floor(Math.random() * remaining_tiles.length);
+    letters[i] = remaining_tiles[idx];
+    remaining_tiles.splice(idx, 1);
   }
   return letters;
-}
-
-function generate_letter() {
-  let letter = null;
-  // Try to select a random tile until one that has remaining tiles is chosen.
-  while(letter == null) {
-      let rand = Math.floor(Math.random() * 26);
-      if(remaining_tiles[rand][1] > 0) {
-          letter = remaining_tiles[rand][0];
-          // Subtract one from the remaining number of this tile
-          remaining_tiles[rand][1]--;
-      }
-  }
-  return letter;
 }
