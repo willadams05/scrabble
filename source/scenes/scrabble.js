@@ -250,13 +250,13 @@ export class Scrabble extends Phaser.Scene{
                 continue;
             }
             // If the tile is the first tile of the word, remove first element of word array
-            if(i == 0 && tile.image.x == word[i].image.x && tile.image.y == word[i].image.y)
+            if(i == 0 && tilesAreEqual(tile, word[i]))
                 temp_word.shift();
             // If the tile is the last tile of the word, pop last element of word array
-            else if(i == word.length-1 && tile.image.x == word[i].image.x && tile.image.y == word[i].image.y)
+            else if(i == word.length-1 && tilesAreEqual(tile, word[i]))
                 temp_word.pop();
             // If the tile is in the middle of the word, replace with null
-            else if(tile.image.x == word[i].image.x && tile.image.y == word[i].image.y) {
+            else if(tilesAreEqual(tile, word[i])) {
                 temp_word.splice(i, 1, null);
                 null_count++;
             }
@@ -347,6 +347,10 @@ export class Scrabble extends Phaser.Scene{
                 break;
             // Add the tile below the current one to the end of the vertical word.
             let temp_tile = this.submitted_tiles[[tile.image.x, y]];
+            if(containsTile(this.current_vertical, temp_tile)) {
+                console.log('Tile:', temp_tile.letter, ' Already Included In Vertical Word');
+                break;
+            }
             console.log('Tile: ', temp_tile.letter, ' being added at end of vertical word');
             this.current_vertical.push(temp_tile);
             y += OFFSET;
@@ -355,10 +359,14 @@ export class Scrabble extends Phaser.Scene{
         // Check for submitted tiles above the current tile
         y = tile.image.y - OFFSET;
         while(true) {
-            if(!([tile.image.x,y] in this.submitted_tiles))
+            if(!([tile.image.x,y] in this.submitted_tiles) || containsTile(this.current_vertical, tile))
                 break;
             // Add the tile above the current one to the beginning of the vertical word.
             let temp_tile = this.submitted_tiles[[tile.image.x, y]];
+            if(containsTile(this.current_vertical, temp_tile)) {
+                console.log('Tile:', temp_tile.letter, ' Already Included In Vertical Word');
+                break;
+            }
             console.log('Tile: ', temp_tile.letter, ' being added at beginning of vertical word');
             this.current_vertical.unshift(temp_tile);
             y -= OFFSET; v_index++;
@@ -371,7 +379,11 @@ export class Scrabble extends Phaser.Scene{
                 break;
             // Add the tile to the right of the current one to the end of the horizontal word.
             let temp_tile = this.submitted_tiles[[x, tile.image.y]];
-            console.log('Tile: ', temp_tile.letter, ' being added at end of horizontal word');
+            if(containsTile(this.current_horizontal, temp_tile)) {
+                console.log('Tile:', temp_tile.letter, ' Already Included In Horizontal Word');
+                break;
+            }
+            console.log('Tile: ', temp_tile.letter, ' Being Added At End Of Horizontal Word');
             this.current_horizontal.push(temp_tile);
             x += OFFSET;
         }
@@ -383,6 +395,10 @@ export class Scrabble extends Phaser.Scene{
                 break;
             // Add the tile to the left of the current one to the beginning of the horizontal word.
             let temp_tile = this.submitted_tiles[[x, tile.image.y]];
+            if(containsTile(this.current_horizontal, temp_tile)) {
+                console.log('Tile:', temp_tile.letter, ' Already Included In Horizontal Word');
+                break;
+            }
             console.log('Tile: ', temp_tile.letter, ' being added at beginning of horizontal word');
             this.current_horizontal.unshift(temp_tile);
             x -= OFFSET; h_index++;
@@ -518,6 +534,18 @@ function getWordIndex(square, word, dir) {
             word.splice(index, 1);
     }
     return index;
+}
+
+function containsTile(word, tile) {
+    for(let i = 0; i < word.length; i++) {
+        if(tilesAreEqual(word[i], tile))
+            return true;
+    }
+    return false;
+}
+
+function tilesAreEqual(tile1, tile2) {
+    return (tile1.image.x == tile2.image.x) && (tile1.image.y == tile2.image.y);
 }
 
 // Helper function return the string formed by an array of tile objects.
