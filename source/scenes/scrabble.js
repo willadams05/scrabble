@@ -13,31 +13,37 @@ export class Scrabble extends Phaser.Scene{
     }
 
     init() {
-        // A dict of all tiles and their corresponding point values
+        // Dict of all tiles and their corresponding point values
         this.tile_scores = {
             'A': 1, 'B': 3, 'C': 3, 'D': 2, 'E': 1, 'F': 4, 'G': 2, 'H': 4,
             'I': 1, 'J': 8, 'K': 5, 'L': 1, 'M': 3, 'N': 1, 'O': 1, 'P': 3,
             'Q': 10, 'R': 1, 'S': 1, 'T': 1, 'U': 1, 'V': 4, 'W': 4, 'X': 8,
             'Y': 4, 'Z': 10
         };
-        // The horizontal word currently being spelled on the board.
+        // Horizontal word currently being spelled on the board.
         this.current_horizontal = [];
-        // The vertical word currently being spelled on the board.
+        // Vertical word currently being spelled on the board.
         this.current_vertical = [];
-        // The direction of the word currently being spelled
+        // Direction of the word currently being spelled
         this.direction = '';
-        // The number of tiles currently on the board that have not been submitted
+        // Number of tiles currently on the board that have not been submitted
         this.clickable_tiles = 0;
-        // The alphabet tile selected from the available pieces
+        // Alphabet tile selected from the available pieces
         this.selected_tile = null;
-        // A list of the tiles currently available to the player
+        // List of the tiles currently available to the player
         this.current_tiles = [null, null, null, null, null, null, null];
-        // A dict of the tiles that have been submitted as words. (key: position tuple, value: tile object)
+        // Dict of the tiles that have been submitted as words. (key: position tuple, value: tile object)
         this.submitted_tiles = {};
-        // A list of board squares where a tile can be placed
+        // List of board squares where a tile can be placed
         this.board = [];
-        // A list of the tiles currently placed on the board (but not submitted) by the opponent
+        // List of the tiles currently placed on the board (but not submitted) by the opponent
         this.opponent_tiles = [];
+        // Flag that determines who can currently make moves on the board.
+        this.my_turn = false;
+        // Message displaying that it is the opponent's turn
+        this.opponent_image = null;
+        // Message displaying that not all opponents have joined
+        this.waiting_image = null;
     }
 
     preload() {
@@ -46,6 +52,8 @@ export class Scrabble extends Phaser.Scene{
         this.load.image('border', 'source/assets/border.png');
         this.load.image('clear', 'source/assets/clear_button.png');
         this.load.image('submit', 'source/assets/submit_button.png');
+        this.load.image('opponent-turn', 'source/assets/opponent_turn.png');
+        this.load.image('waiting', 'source/assets/waiting.png');
         for(let i = 65; i < 91; i++) {
             let letter = String.fromCharCode(i);
             this.load.image(letter, 'source/assets/tiles/tile_' + letter + '.png');
@@ -69,14 +77,18 @@ export class Scrabble extends Phaser.Scene{
         let clear = this.add.image(80, 720, 'clear').setInteractive();
         clear.scale = .8
         clear.on('pointerup', ()=>{
-            this.clearWord();
+            if(this.my_turn)
+                this.clearWord();
         });
 
         // Add button to allow word submission
         let submit = this.add.image(600, 720, 'submit').setInteractive();
         submit.on('pointerup', ()=>{
-            this.submitWord();
+            if(this.my_turn)
+                this.submitWord();
         })
+
+        this.waiting_image = this.add.image(350, 50, 'waiting');
     }
 
     setSocketEvents() {
@@ -85,15 +97,30 @@ export class Scrabble extends Phaser.Scene{
             socket.emit('success', 'Connection Successful');
         });
 
+        // All opponents have connected, request tiles from server
         socket.on('opponent_connected', ()=> {
             console.log('Requesting Tiles From Server');
             socket.emit('load_tiles', 7);
+            this.waiting_image.destroy();
         });
 
-        // Load the tiles picked by the server
+        // Load the tiles objects from the letters picked by the server
         socket.on('receive_tiles', (tiles)=> {
             console.log('Received Tiles From Server:', tiles);
             this.getNewTiles(tiles);
+        });
+
+        // Begin turn (enable commands), remove "Opponent's Turn" message
+        socket.on('start_turn', ()=> {
+            if(this.opponent_image != null)
+                this.opponent_image.destroy();
+            this.my_turn = true;
+        });
+
+        // End turn (disable commands), add "Opponents' Turn" message
+        socket.on('end_turn', ()=> {
+            this.opponent_image = this.add.image(350, 50, 'opponent-turn');
+            this.my_turn = false;
         });
 
         // When another player places a tile, place it on this player's board
@@ -166,7 +193,8 @@ export class Scrabble extends Phaser.Scene{
                 let square = this.add.image(x_pos, y_pos, 'empty-square').setInteractive();
                 // Add listener for selecting a square on the board
                 square.on('pointerup', ()=>{
-                    this.placeTile(square);
+                    if(this.my_turn)
+                        this.placeTile(square);
                 })
                 this.board.push(square);
                 // Each tile is 43x43 px with a 3px white border separating them
@@ -193,7 +221,7 @@ export class Scrabble extends Phaser.Scene{
             tile.origin_x = x; tile.origin_y = y;
             tile.image = this.add.image(x, y, tile.letter).setInteractive();
             tile.image.on('pointerup', ()=>{
-                if(tile.clickable) {
+                if(tile.clickable && this.my_turn) {
                     // On left-click, select the currently clicked tile
                     if(this.scene.systems.input.activePointer.leftButtonReleased()) {
                         this.deselectTile();
@@ -447,7 +475,7 @@ export class Scrabble extends Phaser.Scene{
         for(let i = 0; i < this.current_horizontal.length; i++) {
             let tile = this.current_horizontal[i];
             // If the current tile is not a submitted tile (still clickable) then it should be moved 
-            if(tile.clickable == true) {
+            if(tile.clickable) {
                 socket.emit('tile_removed', tile);
                 this.moveToDeck(tile);
             }
@@ -455,7 +483,7 @@ export class Scrabble extends Phaser.Scene{
         for(let j = 0; j < this.current_vertical.length; j++) {
             let tile = this.current_vertical[j];
             // Don't emit tile_removed message if the tile was already moved back from the horizontal word.
-            if((tile.image.x != tile.origin_x || tile.image.y != tile.origin_y) && tile.clickable == true)
+            if((tile.image.x != tile.origin_x || tile.image.y != tile.origin_y) && tile.clickable)
                 socket.emit('tile_removed', tile);
                 this.moveToDeck(tile);
         }
