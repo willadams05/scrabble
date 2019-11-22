@@ -86,11 +86,11 @@ io.on('connection', function (socket) {
     socket.emit('end_turn');
     // Let the other clients know that their opponent submitted a valid word
     socket.broadcast.emit('opponent_words_added', data);
-    // Let the next client in line know that it is their turn
-    io.to(`${connections[turn_idx++]}`).emit('start_turn');
     // If all clients have had a turn, allow client1 to take their next turn.
     if(turn_idx == connections.length)
       turn_idx = 0;
+    // Let the next client in line know that it is their turn
+    io.to(`${connections[turn_idx++]}`).emit('start_turn');
   });
 
   socket.on('rollback', function (data) {

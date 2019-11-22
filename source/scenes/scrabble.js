@@ -112,6 +112,7 @@ export class Scrabble extends Phaser.Scene{
 
         // Begin turn (enable commands), remove "Opponent's Turn" message
         socket.on('start_turn', ()=> {
+            console.log('Starting Turn');
             if(this.opponent_image != null)
                 this.opponent_image.destroy();
             this.my_turn = true;
@@ -119,6 +120,7 @@ export class Scrabble extends Phaser.Scene{
 
         // End turn (disable commands), add "Opponents' Turn" message
         socket.on('end_turn', ()=> {
+            console.log('Ending Turn');
             this.opponent_image = this.add.image(350, 50, 'opponent-turn');
             this.my_turn = false;
         });
@@ -374,52 +376,31 @@ export class Scrabble extends Phaser.Scene{
             console.log('No Tile Selected')
     }
 
-    // Sets the word(s) being currently spelled according to the placement of the most recent tile.
+    // Adds the current tile to the words, while searching for previously submitted adjacent tiles
     addToWord(tile, word_index) {
-        // If this is the first tile being submitted, determine if this tile is adjacent to any previously submitted tiles
-        if(this.clickable_tiles == 0 && Object.keys(this.submitted_tiles).length != 0) {
-            this.addSurroundingTiles(tile, true);
+        // Plan to add the tile at h_index for horizontal word, v_index for vertical word.
+        let h_index = word_index[0], v_index = word_index[1];
+        if(h_index != -1) {
+            // Add previously submitted tiles that are to the left of the current position
+            h_index = findSurrounding(tile.image.x - OFFSET, tile.image.y, OFFSET*-1, this.current_horizontal, 
+                                    'horizontal', h_index, this.submitted_tiles, true);
+            // Add the current tile to the end of the horizontal word
+            console.log('New Tile: ', tile.letter, ' Added At Horizontal Index: ', h_index)
+            this.current_horizontal.splice(h_index++, 0, tile);
+            // Add previously submitted tiles that are to the right of the current position
+            findSurrounding(tile.image.x + OFFSET, tile.image.y, OFFSET, this.current_horizontal, 
+                            'horizontal', h_index, this.submitted_tiles, false);
         }
-        else {
-            console.log('Adding', tile.letter,'to Current Word');
-            let h_index = word_index[0], v_index = word_index[1];
-            // Add the tile to the current word(s) being formed.
-            if(h_index != -1) {
-                this.current_horizontal.splice(h_index, 0, tile);
-            }
-            if(v_index != -1) {
-                this.current_vertical.splice(v_index, 0, tile);
-            }
-            // Determine if the most recently placed tile came into contact with an already-submitted tile.
-            // @TODO: Fix bug when tile is added by existing tile, removed, then added again (existing tile added twice)
-            this.addSurroundingTiles(tile, false);
-        }
-    }
-
-    // Find the surrounding submitted tiles that are included in the current word.
-    addSurroundingTiles(tile, add_tile) {
-        console.log('Looking For Tiles Surrounding:', tile.letter);
-        let v_index = this.current_vertical.length, h_index = this.current_horizontal.length;
-        
-        // Check for submitted tiles below the current tile
-        let x = tile.image.x, y = tile.image.y + OFFSET;
-        findSurrounding(x, y, OFFSET, this.current_vertical, 'vertical', v_index, this.submitted_tiles, false);
-        // Check for submitted tiles above the current tile
-        y = tile.image.y - OFFSET;
-        v_index = findSurrounding(x, y, OFFSET*-1, this.current_vertical, 'vertical', v_index, this.submitted_tiles, true);
-        // Check for submited tiles to the right of the current tile
-        x = tile.image.x + OFFSET, y = tile.image.y;
-        findSurrounding(x, y, OFFSET, this.current_horizontal, 'horizontal', h_index, this.submitted_tiles, false);
-        // Check for submitted tiles to the left of the current tile
-        x = tile.image.x - OFFSET;
-        h_index = findSurrounding(x, y, OFFSET*-1, this.current_horizontal, 'horizontal', h_index, this.submitted_tiles, true);
-
-        // Add the tile to the current word being formed.
-        if(add_tile) {
-            console.log('Tile: ', this.selected_tile.letter, ' Added At Horizontal Index: ', h_index)
-            this.current_horizontal.splice(h_index, 0, this.selected_tile);
-            console.log('Tile: ', this.selected_tile.letter, ' Added At Vertical Index: ', v_index)
-            this.current_vertical.splice(v_index, 0, this.selected_tile);
+        if(v_index != -1) {
+            // Add previously submitted tiles that are above the current position
+            v_index = findSurrounding(tile.image.x, tile.image.y - OFFSET, OFFSET*-1, this.current_vertical, 
+                                      'vertical', v_index, this.submitted_tiles, true);
+            // Add the current tile to the word
+            console.log('New Tile: ', tile.letter, ' Added At Vertical Index: ', v_index)
+            this.current_vertical.splice(v_index++, 0, tile);
+            // Add previously submitted tiles that are below the current position
+            findSurrounding(tile.image.x, tile.image.y + OFFSET, OFFSET, this.current_vertical, 
+                            'vertical', v_index, this.submitted_tiles, false);
         }
     }
 
@@ -483,9 +464,10 @@ export class Scrabble extends Phaser.Scene{
         for(let j = 0; j < this.current_vertical.length; j++) {
             let tile = this.current_vertical[j];
             // Don't emit tile_removed message if the tile was already moved back from the horizontal word.
-            if((tile.image.x != tile.origin_x || tile.image.y != tile.origin_y) && tile.clickable)
+            if(tile.clickable && (tile.image.x != tile.origin_x || tile.image.y != tile.origin_y)) {
                 socket.emit('tile_removed', tile);
                 this.moveToDeck(tile);
+            }
         }
         this.clickable_tiles = 0;
         this.current_horizontal = [];
@@ -560,25 +542,29 @@ function getWordIndex(square, word, dir) {
 }
 
 // Helper function that finds adjacent tiles in a specific direction from the current tile
-function findSurrounding(x, y, off, word, dir, index, submitted, increase_index) {
+function findSurrounding(x, y, off, word, dir, index, submitted, begin_flag) {
     while(true) {
+        // If this is not a previously submitted tile, ignore it (it's already on the current word). 
         if(!([x,y] in submitted))
             break;
-        // Add the tile to the left of the current one to the beginning of the horizontal word.
         let temp_tile = submitted[[x, y]];
-        if(containsTile(word, temp_tile)) {
-            console.log('Submitted Tile:', temp_tile.letter, ' Already Included In Word At Index:', index);
+        // @TODO: Vertical words can remove previously submitted tiles
+        console.log('Current Submitted Tile Clickable: ', temp_tile.clickable);
+        // If the submitted tile is already in the current word, ignore it and all adjacent tiles
+        if(containsTile(word, temp_tile))
             break;
-        }
-        console.log('Submitted Tile: ', temp_tile.letter, ' Being Added To Word At Index:', index);
-        if(increase_index) {
+        // Add the submitted tile to the current word and increment index for next tile
+        if(begin_flag) {
+            console.log('Submitted Tile:', temp_tile.letter, 'Being Added To Beginning Of Word');
             word.unshift(temp_tile);
-            index++;
         }
-        else
+        else {
+            console.log('Submitted Tile:', temp_tile.letter, 'Being Added To Word At Index:', index);
             word.splice(index, 0, temp_tile);
+        }
         x = (dir == 'horizontal') ? x + off : x;
         y = (dir == 'vertical') ? y + off : y;
+        index++;
     }
     return index;
 }
