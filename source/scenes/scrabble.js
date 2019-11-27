@@ -1,6 +1,7 @@
 import { CONSTANTS } from "../constants.js";
 import { Tile } from "../tile.js";
 import { State } from "../state.js";
+import { Message } from "../message.js";
 
 // Each tile is 43x43 px with a 3px border surrounding it, so offset is 46 pixels.
 var OFFSET = 46;
@@ -45,14 +46,14 @@ export class Scrabble extends Phaser.Scene{
         this.opponent_image = null;
         // Message displaying that not all opponents have joined
         this.waiting_image = null;
-        // An array that stores timestamps for all messages received from the server
-        this.receive_times = [];
+        // An array that stores all messages received from the server
+        this.receives = [];
         // Number of receives from the mailbox since the last checkpoint.
         this.num_receives = 0;  // Messages received each time opponent places/removes tiles, turns change, and words are submitted
         // When this many receives have occurred, save a checkpoint
         this.receive_limit = 1;
-        // An array that stores timestamps for all messages sent to the server
-        this.send_times = [];
+        // An array that stores all messages sent to the server
+        this.sends = [];
         // Number of sends to the mailbox since the last checkpoint.
         this.num_sends = 0;     // Messages sent each time a tile is placed or removed
         // When this many sends have occurred, save a checkpoint
@@ -117,6 +118,7 @@ export class Scrabble extends Phaser.Scene{
             console.log('Requesting Tiles From Server');
             socket.emit('load_tiles', 7);
             this.waiting_image.destroy();
+            this.opponent_image = this.add.image(350, 50, 'opponent-turn');
         });
 
         // Load the tiles objects from the letters picked by the server
@@ -129,7 +131,6 @@ export class Scrabble extends Phaser.Scene{
 
         // Begin turn (enable commands), remove "Opponent's Turn" message
         socket.on('start_turn', ()=> {
-            this.receive_times.push(Date.now());
             this.num_receives++;
             console.log('Starting Turn');
             if(this.opponent_image != null)
@@ -139,21 +140,11 @@ export class Scrabble extends Phaser.Scene{
                 this.saveState();
         });
 
-        // End turn (disable commands), add "Opponents' Turn" message
-        socket.on('end_turn', ()=> {
-            this.receive_times.push(Date.now());
-            this.num_receives++;
-            console.log('Ending Turn');
-            this.opponent_image = this.add.image(350, 50, 'opponent-turn');
-            this.my_turn = false;
-            if(this.num_receives >= this.receive_limit)
-                this.saveState();
-        });
-
         // When another player places a tile, place it on this player's board
-        socket.on('tile_placed', (tile)=> {
-            this.receive_times.push(Date.now());
+        socket.on('tile_placed', (message)=> {
+            this.receives.push(message);
             this.num_receives++;
+            let tile = message.data;
             console.log('Opponent Placed Tile:', tile.letter);
             this.opponent_tiles.push(tile);
             // Add the tile's image to this scene
@@ -163,9 +154,10 @@ export class Scrabble extends Phaser.Scene{
         });
         
         // When another player removes a tile, remove it from this player's board
-        socket.on('tile_removed', (tile)=> {
-            this.receive_times.push(Date.now());
+        socket.on('tile_removed', (message)=> {
+            this.receives.push(message);
             this.num_receives++;
+            let tile = message.data;
             console.log('Opponent Removed Tile:', tile.letter);
             // Remove the tile from the opponent's tile array and remove from the screen
             let removed_tile = null;
@@ -183,10 +175,10 @@ export class Scrabble extends Phaser.Scene{
         });
         
         // Called when current player has submitted a correct word
-        socket.on('words_added', (data)=> {
-            this.receive_times.push(Date.now());
+        socket.on('words_added', (message)=> {
+            this.receives.push(message);
             this.num_receives++;
-            console.log('Correct Words Added: ', data);
+            console.log('Correct Words Added: ', message.data);
 
             // Load as many new tiles as were used on the last successful word
             socket.emit('load_tiles', this.num_clickable);
@@ -205,15 +197,20 @@ export class Scrabble extends Phaser.Scene{
             this.direction = '';
             this.num_clickable = 0;
 
+            // End the user's turn
+            console.log('Ending Turn');
+            this.opponent_image = this.add.image(350, 50, 'opponent-turn');
+            this.my_turn = false;
+
             if(this.num_receives >= this.receive_limit)
                 this.saveState();
         });
 
         // When another player has submitted a correct word, make the tiles permanent and clear the current opponent tiles.
-        socket.on('opponent_words_added', (words)=> {
-            this.receive_times.push(Date.now());
+        socket.on('opponent_words_added', (message)=> {
+            this.receives.push(message);
             this.num_receives++;
-            console.log('Opponent Added Words:', words);
+            console.log('Opponent Added Words:', message.data);
             for(let i = 0; i < this.opponent_tiles.length; i++)
                 this.makePermanent(this.opponent_tiles[i]);
             this.opponent_tiles = [];
@@ -312,8 +309,9 @@ export class Scrabble extends Phaser.Scene{
             return;
 
         // Let other players know that a tile was removed
-        socket.emit('tile_removed', tile);
-        this.send_times.push(Date.now());
+        let message = new Message('tile_removed', tile);
+        socket.emit(message.label, message);
+        this.sends.push(message);
         this.num_sends++;
 
         // Remove the tile from the currently stored word (replace with null)
@@ -402,8 +400,9 @@ export class Scrabble extends Phaser.Scene{
                 this.selected_tile.border.destroy();
 
                 // Let other players know that a tile was placed
-                socket.emit('tile_placed', this.selected_tile);
-                this.send_times.push(Date.now());
+                let message = new Message('tile_placed', this.selected_tile);
+                socket.emit(message.label, message);
+                this.sends.push(message);
                 this.num_sends++;
 
                 // Determine the new current word(s) according to where the tile was placed
@@ -504,7 +503,8 @@ export class Scrabble extends Phaser.Scene{
         }
         
         // Verify that the word(s) is/are correct
-        socket.emit('words_submitted', words);
+        var message = new Message('words_submitted', words);
+        socket.emit(message.label, message);
     }
 
     // Set the currentt tile to be unclickable and store it in submitted_tiles
@@ -519,8 +519,9 @@ export class Scrabble extends Phaser.Scene{
             let tile = this.current_horizontal[i];
             // If the current tile is not a submitted tile (still clickable) then it should be moved 
             if(tile.clickable) {
-                socket.emit('tile_removed', tile);
-                this.send_times.push(Date.now());
+                let message = new Message('tile_removed', tile);
+                socket.emit(message.label, message);
+                this.sends.push(message);
                 this.num_sends++;
                 this.moveToDeck(tile);
             }
@@ -529,8 +530,9 @@ export class Scrabble extends Phaser.Scene{
             let tile = this.current_vertical[j];
             // Don't emit tile_removed message if the tile was already moved back from the horizontal word.
             if(tile.clickable && (tile.image.x != tile.origin_x || tile.image.y != tile.origin_y)) {
-                socket.emit('tile_removed', tile);
-                this.send_times.push(Date.now());
+                let message = new Message('tile_removed', tile);
+                socket.emit(message.label, message);
+                this.sends.push(message);
                 this.num_sends++;
                 this.moveToDeck(tile);
             }
@@ -609,7 +611,7 @@ export class Scrabble extends Phaser.Scene{
         // Load the system state from the most recent checkpoint
         // M-Propagation:
         //      a. Restore system state from checkpoint on current client
-        //      b. Check if any messages need to be unsent by finding messages sent after the checkpoint in send_times array
+        //      b. Check if any messages need to be unsent by finding messages sent after the checkpoint in sends array
         //          b1. If messages unsent, emit "unreceive" message to server
         //          b2. If client receives "unreceive" message, must roll back to checkpoint before timestamp in "unreceive"???
         // R-Propagation:

@@ -53,26 +53,26 @@ io.on('connection', function (socket) {
   });
 
   // Client tells the server that it has placed a tile on the board
-  socket.on('tile_placed', function (tile) {
-    console.log(socket.id, 'Placed Tile:', tile.letter);
+  socket.on('tile_placed', function (message) {
+    console.log(socket.id, 'Placed Tile:', message.data.letter);
     // Server broadcasts to all other clients (not including sender) to add the tile
-    socket.broadcast.emit('tile_placed', tile);
+    socket.broadcast.emit('tile_placed', message);
   });
 
   // Client tells the server that it has removed a tile from the board
-  socket.on('tile_removed', function (tile) {
-    console.log(socket.id, 'Removed Tile:', tile.letter);
+  socket.on('tile_removed', function (message) {
+    console.log(socket.id, 'Removed Tile:', message.data.letter);
     // Server broadcasts to all other clients (not including sender) to remove the tile
-    socket.broadcast.emit('tile_removed', tile);
+    socket.broadcast.emit('tile_removed', message);
   });
 
   // Server verifies if a client's words are valid. 
   //   - If submitted words are valid, award points and move turn to next player. 
   //   - If any of the submitted words are invalid, rollback. 
-  socket.on('words_submitted', function (data) {
-    console.log('Checking Words: ', data);
-    for(let i = 0; i < data.length; i++) {
-      let word = data[i];
+  socket.on('words_submitted', function (message) {
+    console.log('Checking Words: ', message.data);
+    for(let i = 0; i < message.data.length; i++) {
+      let word = message.data[i];
       if(words.check(word) == false) {
         console.log('Word: ', word, ' Is Invalid');
         socket.emit('rollback');
@@ -81,11 +81,9 @@ io.on('connection', function (socket) {
       console.log('Word: ', word, ' Is Valid');
     }
     // Let the sending client know that they submitted a valid word
-    socket.emit('words_added', data);
-    // Let the sending client know that their turn is over.
-    socket.emit('end_turn');
+    socket.emit('words_added', message);
     // Let the other clients know that their opponent submitted a valid word
-    socket.broadcast.emit('opponent_words_added', data);
+    socket.broadcast.emit('opponent_words_added', message);
     // If all clients have had a turn, allow client1 to take their next turn.
     if(turn_idx == connections.length)
       turn_idx = 0;
