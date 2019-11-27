@@ -621,6 +621,7 @@ export class Scrabble extends Phaser.Scene{
                                    this.submitted_tiles, this.opponent_tiles, this.my_turn);
         this.checkpoints.push(checkpoint);
         console.log('Saving System State At:', checkpoint.timestamp);
+        console.log('Saved State:', checkpoint);
     }
 
     // Restores the system state from a specific checkpoint  
@@ -628,14 +629,14 @@ export class Scrabble extends Phaser.Scene{
         console.log('Rolling Back To Checkpoint At:', checkpoint.timestamp);
         console.log('Checkpoint:', checkpoint);
         // Set all of the necessary variables
-        this.current_vertical = checkpoint.current_vertical;
-        this.current_horizontal = checkpoint.current_horizontal;
+        this.current_vertical = JSON.parse(JSON.stringify(checkpoint.current_vertical));
+        this.current_horizontal = JSON.parse(JSON.stringify(checkpoint.current_horizontal));
         this.direction = checkpoint.direction;
         this.num_clickable = checkpoint.num_clickable;
         this.selected_tile = checkpoint.selected_tile;
-        this.current_tiles = checkpoint.current_tiles;
-        this.submitted_tiles = checkpoint.submitted_tiles;
-        this.opponent_tiles = checkpoint.opponent_tiles;
+        this.current_tiles = JSON.parse(JSON.stringify(checkpoint.current_tiles));
+        this.submitted_tiles = JSON.parse(JSON.stringify(checkpoint.submitted_tiles));
+        this.opponent_tiles = JSON.parse(JSON.stringify(checkpoint.opponent_tiles));
         this.my_turn = checkpoint.my_turn;
         
         // Redraw all of the images
