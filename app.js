@@ -96,6 +96,7 @@ io.on('connection', function (socket) {
   socket.on('rollback', function (data) {
     console.log('Rollback: ', data);
   });
+  
 });
 
 function load_letters(num) {

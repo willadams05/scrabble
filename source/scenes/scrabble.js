@@ -1,5 +1,6 @@
 import { CONSTANTS } from "../constants.js";
 import { Tile } from "../tile.js";
+import { State } from "../state.js";
 
 // Each tile is 43x43 px with a 3px border surrounding it, so offset is 46 pixels.
 var OFFSET = 46;
@@ -27,7 +28,7 @@ export class Scrabble extends Phaser.Scene{
         // Direction of the word currently being spelled
         this.direction = '';
         // Number of tiles currently on the board that have not been submitted
-        this.clickable_tiles = 0;
+        this.num_clickable = 0;
         // Alphabet tile selected from the available pieces
         this.selected_tile = null;
         // List of the tiles currently available to the player
@@ -44,6 +45,16 @@ export class Scrabble extends Phaser.Scene{
         this.opponent_image = null;
         // Message displaying that not all opponents have joined
         this.waiting_image = null;
+        // Number of receives from the mailbox since the last checkpoint.
+        this.num_receives = 0;  // Messages received each time opponent places/removes tiles, turns change, and words are submitted
+        // When this many receives have occurred, save a checkpoint
+        this.receive_limit = 1;
+        // Number of sends to the mailbox since the last checkpoint.
+        this.num_sends = 0;     // Messages sent each time a tile is placed or removed
+        // When this many sends have occurred, save a checkpoint
+        this.send_limit = 1;
+        // The list of checkpoints stored on this client
+        this.checkpoints = [];
     }
 
     preload() {
@@ -108,33 +119,45 @@ export class Scrabble extends Phaser.Scene{
         socket.on('receive_tiles', (tiles)=> {
             console.log('Received Tiles From Server:', tiles);
             this.getNewTiles(tiles);
+            // Save initial client state
+            this.saveState();
         });
 
         // Begin turn (enable commands), remove "Opponent's Turn" message
         socket.on('start_turn', ()=> {
+            this.num_receives++;
             console.log('Starting Turn');
             if(this.opponent_image != null)
                 this.opponent_image.destroy();
             this.my_turn = true;
+            if(this.num_receives >= this.receive_limit)
+                this.saveState();
         });
 
         // End turn (disable commands), add "Opponents' Turn" message
         socket.on('end_turn', ()=> {
+            this.num_receives++;
             console.log('Ending Turn');
             this.opponent_image = this.add.image(350, 50, 'opponent-turn');
             this.my_turn = false;
+            if(this.num_receives >= this.receive_limit)
+                this.saveState();
         });
 
         // When another player places a tile, place it on this player's board
         socket.on('tile_placed', (tile)=> {
+            this.num_receives++;
             console.log('Opponent Placed Tile:', tile.letter);
             this.opponent_tiles.push(tile);
             // Add the tile's image to this scene
             tile.image = this.add.image(tile.image.x, tile.image.y, tile.letter);
+            if(this.num_receives >= this.receive_limit)
+                this.saveState();
         });
         
         // When another player removes a tile, remove it from this player's board
         socket.on('tile_removed', (tile)=> {
+            this.num_receives++;
             console.log('Opponent Removed Tile:', tile.letter);
             // Remove the tile from the opponent's tile array and remove from the screen
             let removed_tile = null;
@@ -147,14 +170,17 @@ export class Scrabble extends Phaser.Scene{
             this.opponent_tiles = this.opponent_tiles.filter(t => t.image.x != tile.image.x || t.image.y != tile.image.y);
             // Remove the tile image from the scene
             removed_tile.image.destroy();
+            if(this.num_receives >= this.receive_limit)
+                this.saveState();
         });
         
         // Called when current player has submitted a correct word
         socket.on('words_added', (data)=> {
+            this.num_receives++;
             console.log('Correct Words Added: ', data);
 
             // Load as many new tiles as were used on the last successful word
-            socket.emit('load_tiles', this.clickable_tiles);
+            socket.emit('load_tiles', this.num_clickable);
 
             // Set all of the tiles used for the last word(s) to be unclickable
             for(let i = 0; i < this.current_horizontal.length; i++) {
@@ -168,15 +194,21 @@ export class Scrabble extends Phaser.Scene{
             this.current_horizontal = [];
             this.current_vertical = [];
             this.direction = '';
-            this.clickable_tiles = 0;
+            this.num_clickable = 0;
+
+            if(this.num_receives >= this.receive_limit)
+                this.saveState();
         });
 
         // When another player has submitted a correct word, make the tiles permanent and clear the current opponent tiles.
         socket.on('opponent_words_added', (words)=> {
+            this.num_receives++;
             console.log('Opponent Added Words:', words);
             for(let i = 0; i < this.opponent_tiles.length; i++)
                 this.makePermanent(this.opponent_tiles[i]);
             this.opponent_tiles = [];
+            if(this.num_receives >= this.receive_limit)
+                this.saveState();
         });
         
         // @TODO: Called when another player submits an incorrect word (rollback is initiated)
@@ -262,6 +294,7 @@ export class Scrabble extends Phaser.Scene{
 
         // Let other players know that a tile was removed
         socket.emit('tile_removed', tile);
+        this.num_sends++;
 
         // Remove the tile from the currently stored word (replace with null)
         if(this.current_horizontal.length != 0)
@@ -270,14 +303,14 @@ export class Scrabble extends Phaser.Scene{
             this.removeFromWord(tile, this.current_vertical, 'vertical');
 
         // If a tile was removed from one of the words, decrease the # of clickable tiles
-        if(this.clickable_tiles > 0)
-            this.clickable_tiles--;
+        if(this.num_clickable > 0)
+            this.num_clickable--;
 
         // Place the tile back in the deck
         this.moveToDeck(tile);
 
         // If no more clickable tiles are on the board, clear the current words.
-        if(this.clickable_tiles == 0) {
+        if(this.num_clickable == 0) {
             this.current_horizontal = [];
             this.current_vertical = [];
         }
@@ -291,8 +324,11 @@ export class Scrabble extends Phaser.Scene{
         else if(this.current_vertical.length == 1 && this.current_horizontal.length == 0)
             this.current_horizontal.push(this.current_vertical[0]);
 
-        console.log('Tile Removed - New Horizontal Word: ', getWord(this.current_horizontal));
-        console.log('Tile Removed - New Vertical Word: ', getWord(this.current_vertical));
+        if(this.num_sends >= this.send_limit)
+            this.saveState();
+
+        console.log('Tile Removed - New Horizontal Word:', getWord(this.current_horizontal));
+        console.log('Tile Removed - New Vertical Word:', getWord(this.current_vertical));
     }
 
     // Replace a specific tile in a word with null
@@ -333,7 +369,8 @@ export class Scrabble extends Phaser.Scene{
     placeTile(square) {
         // Only place tile if one is currently selected
         if(this.selected_tile != null) {
-            let word_index = isValidPosition(square, this.current_horizontal, this.current_vertical, this.direction);
+            let word_index = isValidPosition(square, this.current_horizontal, this.current_vertical, 
+                                             this.direction, this.submitted_tiles);
             // console.log('Word Index: ', word_index);
             // Ensure that the tile is being placed in a valid position.
             if(word_index[0] != -1 || word_index[1] != -1) {
@@ -346,13 +383,14 @@ export class Scrabble extends Phaser.Scene{
 
                 // Let other players know that a tile was placed
                 socket.emit('tile_placed', this.selected_tile);
+                this.num_sends++;
 
                 // Determine the new current word(s) according to where the tile was placed
                 // @TODO: Currently only 1 vertical / 1 horizontal word is possible, need to extend to more
                 this.addToWord(this.selected_tile, word_index);
 
                 // Increase the number of clickable tiles on the screen (must do addToWord)
-                this.clickable_tiles++;
+                this.num_clickable++;
 
                 // If two tiles are going in a certain direction, set this as the current word direction.
                 // if(this.current_horizontal.length == 2 || this.current_vertical.length == 2)
@@ -363,6 +401,9 @@ export class Scrabble extends Phaser.Scene{
                 this.current_tiles[this.selected_tile.deck_index] = null;
 
                 this.selected_tile = null;
+
+                if(this.num_sends >= this.send_limit)
+                    this.saveState();
 
                 if(this.current_horizontal.length > 0)
                     console.log('Tile Added - New Horizontal Word: ', getWord(this.current_horizontal));
@@ -458,6 +499,7 @@ export class Scrabble extends Phaser.Scene{
             // If the current tile is not a submitted tile (still clickable) then it should be moved 
             if(tile.clickable) {
                 socket.emit('tile_removed', tile);
+                this.num_sends++;
                 this.moveToDeck(tile);
             }
         }
@@ -466,14 +508,36 @@ export class Scrabble extends Phaser.Scene{
             // Don't emit tile_removed message if the tile was already moved back from the horizontal word.
             if(tile.clickable && (tile.image.x != tile.origin_x || tile.image.y != tile.origin_y)) {
                 socket.emit('tile_removed', tile);
+                this.num_sends++;
                 this.moveToDeck(tile);
             }
         }
-        this.clickable_tiles = 0;
+        this.num_clickable = 0;
         this.current_horizontal = [];
         this.current_vertical = [];
         this.direction = '';
+
+        if(this.num_sends >= this.send_limit)
+            this.saveState();
+
         console.log('Cleared Current Words');
+    }
+
+    // Creates a new checkpoint with the current system state 
+    saveState() {
+        // There have been no sends or receives since this checkpoint
+        this.num_receives = 0, this.num_sends = 0;
+        let checkpoint = new State(this.current_vertical, this.current_horizontal, this.direction, 
+                                   this.num_clickable, this.selected_tile, this.current_tiles, 
+                                   this.submitted_tiles, this.opponent_tiles, this.my_turn);
+        this.checkpoints.push(checkpoint);
+        console.log('Saving System State At:', checkpoint.timestamp);
+    }
+
+    // Restores the system state from its most recent checkpoint  
+    // @TODO: Allow the clients to restore from a specific checkpoint? 
+    restoreState() {
+
     }
 }
 
@@ -487,15 +551,15 @@ export class Scrabble extends Phaser.Scene{
         E
     horizontal words: AN, PI 
     vertical word: UNI              */
-function isValidPosition(square, h_word, v_word, direction) {
+function isValidPosition(square, h_word, v_word, direction, submitted) {
+    // If the tile is being placed on a non-empty square, do not place it
+    if([square.x, square.y] in submitted) {
+        return [-1, -1];
+    }
     // If the word is 0 characters, add it at the beginning of both words 
     if(h_word.length == 0 && v_word.length == 0) {
         return [0,0];
     }
-
-    // If the word is going equally in both directions, add characters to end of each string
-    // if(direction == 'both')
-    //    return [h_word.length, v_word.length];
 
     let h_index = -1, v_index = -1;
     if(direction == 'horizontal' || direction == '' || direction == 'both')
@@ -548,8 +612,6 @@ function findSurrounding(x, y, off, word, dir, index, submitted, begin_flag) {
         if(!([x,y] in submitted))
             break;
         let temp_tile = submitted[[x, y]];
-        // @TODO: Vertical words can remove previously submitted tiles
-        console.log('Current Submitted Tile Clickable: ', temp_tile.clickable);
         // If the submitted tile is already in the current word, ignore it and all adjacent tiles
         if(containsTile(word, temp_tile))
             break;
