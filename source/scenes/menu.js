@@ -12,6 +12,7 @@ export class Menu extends Phaser.Scene{
     }
 
     preload(){
+        this.load.html('inputform', 'inputform.html');
         this.load.image('play-button', 'source/assets/play.png');
     }
     
@@ -21,5 +22,21 @@ export class Menu extends Phaser.Scene{
             console.log("Starting Scrabble")
             this.scene.start(CONSTANTS.SCENES.SCRABBLE);
         })
+
+        var element = this.add.dom(50, 50).createFromCache('inputform');
+        console.log('Dom Element:', element);
+        element.addListener('click');
+        element.on('click', function (event) {
+            if (event.target.name === 'playButton')
+            {
+                var receiveText = this.getChildByName('receiveField');
+                var sendText = this.getChildByName('sendField');
+                //  Have they entered anything?
+                if (receiveText.value !== '')
+                    console.log('Number of Receives Before Checkpoint:', receiveText.value);
+                if(sendText.value != '')
+                    console.log('Number of Sends Before Checkpoint:', sendText.value);
+            }
+        });
     }
 }

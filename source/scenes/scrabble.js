@@ -45,10 +45,14 @@ export class Scrabble extends Phaser.Scene{
         this.opponent_image = null;
         // Message displaying that not all opponents have joined
         this.waiting_image = null;
+        // An array that stores timestamps for all messages received from the server
+        this.receive_times = [];
         // Number of receives from the mailbox since the last checkpoint.
         this.num_receives = 0;  // Messages received each time opponent places/removes tiles, turns change, and words are submitted
         // When this many receives have occurred, save a checkpoint
         this.receive_limit = 1;
+        // An array that stores timestamps for all messages sent to the server
+        this.send_times = [];
         // Number of sends to the mailbox since the last checkpoint.
         this.num_sends = 0;     // Messages sent each time a tile is placed or removed
         // When this many sends have occurred, save a checkpoint
@@ -125,6 +129,7 @@ export class Scrabble extends Phaser.Scene{
 
         // Begin turn (enable commands), remove "Opponent's Turn" message
         socket.on('start_turn', ()=> {
+            this.receive_times.push(Date.now());
             this.num_receives++;
             console.log('Starting Turn');
             if(this.opponent_image != null)
@@ -136,6 +141,7 @@ export class Scrabble extends Phaser.Scene{
 
         // End turn (disable commands), add "Opponents' Turn" message
         socket.on('end_turn', ()=> {
+            this.receive_times.push(Date.now());
             this.num_receives++;
             console.log('Ending Turn');
             this.opponent_image = this.add.image(350, 50, 'opponent-turn');
@@ -146,6 +152,7 @@ export class Scrabble extends Phaser.Scene{
 
         // When another player places a tile, place it on this player's board
         socket.on('tile_placed', (tile)=> {
+            this.receive_times.push(Date.now());
             this.num_receives++;
             console.log('Opponent Placed Tile:', tile.letter);
             this.opponent_tiles.push(tile);
@@ -157,6 +164,7 @@ export class Scrabble extends Phaser.Scene{
         
         // When another player removes a tile, remove it from this player's board
         socket.on('tile_removed', (tile)=> {
+            this.receive_times.push(Date.now());
             this.num_receives++;
             console.log('Opponent Removed Tile:', tile.letter);
             // Remove the tile from the opponent's tile array and remove from the screen
@@ -176,6 +184,7 @@ export class Scrabble extends Phaser.Scene{
         
         // Called when current player has submitted a correct word
         socket.on('words_added', (data)=> {
+            this.receive_times.push(Date.now());
             this.num_receives++;
             console.log('Correct Words Added: ', data);
 
@@ -202,6 +211,7 @@ export class Scrabble extends Phaser.Scene{
 
         // When another player has submitted a correct word, make the tiles permanent and clear the current opponent tiles.
         socket.on('opponent_words_added', (words)=> {
+            this.receive_times.push(Date.now());
             this.num_receives++;
             console.log('Opponent Added Words:', words);
             for(let i = 0; i < this.opponent_tiles.length; i++)
@@ -212,8 +222,13 @@ export class Scrabble extends Phaser.Scene{
         });
         
         // @TODO: Called when another player submits an incorrect word (rollback is initiated)
-        socket.on('rollback', function (data) {
-            console.log('INVALID WORD -- ROLLING BACK');
+        socket.on('rollback', (data)=> {
+            console.log('Invalid Word -- Rolling Back');
+            // Destroy all of the tile images on the board
+            this.clearBoard();
+            // Redraw the correct tiles from the most recent checkpoint
+            let checkpoint = this.checkpoints[this.checkpoints.length-1];
+            this.restoreState(checkpoint);
         });
     }
     
@@ -254,22 +269,26 @@ export class Scrabble extends Phaser.Scene{
             let x = 180 + (i * 50), y = 720; 
             tile.origin_x = x; tile.origin_y = y;
             tile.image = this.add.image(x, y, tile.letter).setInteractive();
-            tile.image.on('pointerup', ()=>{
-                if(tile.clickable && this.my_turn) {
-                    // On left-click, select the currently clicked tile
-                    if(this.scene.systems.input.activePointer.leftButtonReleased()) {
-                        this.deselectTile();
-                        this.selectTile(tile);
-                    }
-                    // On right-click, de-select and remove tile from board
-                    else {
-                        this.deselectTile();
-                        this.removeTile(tile);
-                    }
-                }
-            })
+            this.setTileEvents(tile);
             this.current_tiles[i] = tile;
         }
+    }
+
+    setTileEvents(tile) {
+        tile.image.on('pointerup', ()=>{
+            if(tile.clickable && this.my_turn) {
+                // On left-click, select the currently clicked tile
+                if(this.scene.systems.input.activePointer.leftButtonReleased()) {
+                    this.deselectTile();
+                    this.selectTile(tile);
+                }
+                // On right-click, de-select and remove tile from board
+                else {
+                    this.deselectTile();
+                    this.removeTile(tile);
+                }
+            }
+        });
     }
 
     // Un-highlight the currently selected tile
@@ -294,6 +313,7 @@ export class Scrabble extends Phaser.Scene{
 
         // Let other players know that a tile was removed
         socket.emit('tile_removed', tile);
+        this.send_times.push(Date.now());
         this.num_sends++;
 
         // Remove the tile from the currently stored word (replace with null)
@@ -383,6 +403,7 @@ export class Scrabble extends Phaser.Scene{
 
                 // Let other players know that a tile was placed
                 socket.emit('tile_placed', this.selected_tile);
+                this.send_times.push(Date.now());
                 this.num_sends++;
 
                 // Determine the new current word(s) according to where the tile was placed
@@ -499,6 +520,7 @@ export class Scrabble extends Phaser.Scene{
             // If the current tile is not a submitted tile (still clickable) then it should be moved 
             if(tile.clickable) {
                 socket.emit('tile_removed', tile);
+                this.send_times.push(Date.now());
                 this.num_sends++;
                 this.moveToDeck(tile);
             }
@@ -508,6 +530,7 @@ export class Scrabble extends Phaser.Scene{
             // Don't emit tile_removed message if the tile was already moved back from the horizontal word.
             if(tile.clickable && (tile.image.x != tile.origin_x || tile.image.y != tile.origin_y)) {
                 socket.emit('tile_removed', tile);
+                this.send_times.push(Date.now());
                 this.num_sends++;
                 this.moveToDeck(tile);
             }
@@ -523,6 +546,34 @@ export class Scrabble extends Phaser.Scene{
         console.log('Cleared Current Words');
     }
 
+    // Remove all of the tile images off of the board and from the deck, and reset the game state
+    clearBoard() {
+        this.destroyTileArray(this.current_horizontal);
+        this.destroyTileArray(this.current_vertical);
+        this.destroyTileArray(this.current_tiles);
+        this.destroyTileDict(this.submitted_tiles);        
+    }
+
+    // Destroys all time images in an array
+    destroyTileArray(arr) {
+        for(let i = 0; i < arr.length; i++) {
+            let tile = arr[i];
+            if(tile == null || tile.image == null)
+                continue;
+            tile.image.destroy();
+        }
+    }
+
+    // Destroys all tile images in a dict
+    destroyTileDict(dict) {
+        for(var key in dict) {
+            let tile = dict[key];
+            if(tile == null || tile.image == null)
+                continue;
+            tile.image.destroy();
+        }
+    }
+
     // Creates a new checkpoint with the current system state 
     saveState() {
         // There have been no sends or receives since this checkpoint
@@ -534,10 +585,60 @@ export class Scrabble extends Phaser.Scene{
         console.log('Saving System State At:', checkpoint.timestamp);
     }
 
-    // Restores the system state from its most recent checkpoint  
-    // @TODO: Allow the clients to restore from a specific checkpoint? 
-    restoreState() {
+    // Restores the system state from a specific checkpoint  
+    restoreState(checkpoint) {
+        console.log('Rolling Back To Checkpoint At:', checkpoint.timestamp)
+        // Set all of the necessary variables
+        this.current_vertical = checkpoint.current_vertical;
+        this.current_horizontal = checkpoint.current_horizontal;
+        this.direction = checkpoint.direction;
+        this.num_clickable = checkpoint.num_clickable;
+        this.selected_tile = checkpoint.selected_tile;
+        this.current_tiles = checkpoint.current_tiles;
+        this.submitted_tiles = checkpoint.submitted_tiles;
+        this.opponent_tiles = checkpoint.opponent_tiles;
+        this.my_turn = checkpoint.my_turn;
+        
+        // Redraw all of the images
+        this.redrawTileArray(this.current_horizontal);
+        this.redrawTileArray(this.current_vertical);
+        this.redrawTileArray(this.current_tiles);
+        this.redrawTileDict(this.submitted_tiles);   
 
+        // @TODO:
+        // Load the system state from the most recent checkpoint
+        // M-Propagation:
+        //      a. Restore system state from checkpoint on current client
+        //      b. Check if any messages need to be unsent by finding messages sent after the checkpoint in send_times array
+        //          b1. If messages unsent, emit "unreceive" message to server
+        //          b2. If client receives "unreceive" message, must roll back to checkpoint before timestamp in "unreceive"???
+        // R-Propagation:
+        //      a. Restore system state from checkpoint on current client
+        //      b. Check if messages need to be unsent as before
+        //          b1. If messages are unsent, emit "unreceive" message to server
+        //          b2. If client receives "unreceive" message and it makes send list not a prefix of receive list, must rollback 
+    }
+
+    // Redraw the tile images from an array
+    redrawTileArray(arr) {
+        for(let i = 0; i < arr.length; i++) {
+            let tile = arr[i];
+            if(tile == null || tile.image == null)
+                continue;
+            tile.image = this.add.image(tile.image.x, tile.image.y, tile.letter).setInteractive();
+            this.setTileEvents(tile);
+        }
+    }
+
+    // Redraw the tile images from a dict
+    redrawTileDict(dict) {
+        for(var key in dict) {
+            let tile = dict[key];
+            if(tile == null || tile.image == null)
+                continue;
+            tile.image = this.add.image(tile.image.x, tile.image.y, tile.letter);
+            this.setTileEvents(tile);
+        }
     }
 }
 
