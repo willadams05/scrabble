@@ -239,15 +239,24 @@ export class Scrabble extends Phaser.Scene{
             if(this.num_receives >= this.receive_limit)
                 this.saveState();
         });
+
+        // If any messages on this client need to be unreceived, rollback to checkpoint before the receive.
+        socket.on('unreceive_messages', (messages)=> {
+            for(let i = 0; i < messages.length; i++) {
+                for(let j = 0; j < this.receives.length; j++) {
+                    if(messages[i].timestamp == this.receives[j].timestamp) {
+                        console.log('Message Unreceived -- Rolling Back');
+                        this.rollback(messages[i].timestamp);
+                        return;
+                    }
+                }
+            }
+        });
         
-        // Called when current player submits an incorrect word (rollback is initiated)
-        socket.on('rollback', (data)=> {
+        // Called when current player submits an incorrect word and when unreceiving messages from other clients
+        socket.on('rollback', (timestamp)=> {
             console.log('Invalid Word -- Rolling Back');
-            // Destroy all of the tile images on the board
-            this.clearBoard();
-            // Redraw the correct tiles from the most recent checkpoint
-            let checkpoint = this.checkpoints[this.checkpoints.length-1];
-            this.restoreState(checkpoint);
+            this.rollback(timestamp);
         });
     }
     
@@ -582,12 +591,28 @@ export class Scrabble extends Phaser.Scene{
         console.log('Cleared Current Words');
     }
 
+    // Initiates the rollback procedure (clears bord and restores state from first checkpoint after timestamp)
+    rollback(timestamp) {
+        console.log('Rolling Back Before:', timestamp);
+        // Destroy all of the tile images on the board
+        this.clearBoard();
+        // Restore state from the most recent checkpoint before the timestamp of the message being unsent / unreceived
+        let checkpoint = this.checkpoints[0];
+        for(let i = 1; i < this.checkpoints.length; i++) {
+            if(this.checkpoints[i].timestamp > timestamp)
+                break;
+            checkpoint = this.checkpoints[i];
+        }
+        this.restoreState(checkpoint);
+    }
+
     // Remove all of the tile images off of the board and from the deck, and reset the game state
     clearBoard() {
         console.log('Clearing Board Before Rollback');
         this.destroyTileArray(this.current_horizontal);
         this.destroyTileArray(this.current_vertical);
         this.destroyTileArray(this.current_tiles);
+        this.destroyTileArray(this.opponent_tiles);
         this.destroyTileDict(this.submitted_tiles);        
     }
 
@@ -621,7 +646,7 @@ export class Scrabble extends Phaser.Scene{
                                    this.submitted_tiles, this.opponent_tiles, this.my_turn);
         this.checkpoints.push(checkpoint);
         console.log('Saving System State At:', checkpoint.timestamp);
-        console.log('Saved State:', checkpoint);
+        console.log('Checkpoint:', checkpoint);
     }
 
     // Restores the system state from a specific checkpoint  
@@ -643,16 +668,24 @@ export class Scrabble extends Phaser.Scene{
         this.redrawTileArray(this.current_horizontal);
         this.redrawTileArray(this.current_vertical);
         this.redrawTileArray(this.current_tiles);
+        this.redrawTileArray(this.opponent_tiles);
         this.redrawTileDict(this.submitted_tiles);   
 
         // Unsend all of the messages sent after the checkpoint
+        let unsends = [];
         for(let i = 0; i < this.sends.length; i++) {
             let message = this.sends[i];
-            if(message.timestamp > checkpoint.timestamp)
-            console.log('Undo Message: ', message);
+            if(message.timestamp > checkpoint.timestamp) {
+                console.log('Unsending Message: ', message);
+                unsends.push(message);
+                // Remove the message from the sends list
+                // @TODO: Make sure this works
+                sends.splice(i, 1);
+            }
         }
-
-        // Unreceive all of the messages received after the checkpoint
+        // Let other clients know that this message is being unsent
+        if(unsends.length != 0)
+            socket.emit('unsend_messages', unsends);
 
         // @TODO:
         // Load the system state from the most recent checkpoint

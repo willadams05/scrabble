@@ -75,7 +75,7 @@ io.on('connection', function (socket) {
       let word = message.data[i];
       if(words.check(word) == false) {
         console.log('Word: ', word, ' Is Invalid');
-        socket.emit('rollback');
+        socket.emit('rollback', message.timestamp);
         return;
       }
       console.log('Word: ', word, ' Is Valid');
@@ -91,8 +91,9 @@ io.on('connection', function (socket) {
     io.to(`${connections[turn_idx++]}`).emit('start_turn');
   });
 
-  socket.on('rollback', function (data) {
-    console.log('Rollback: ', data);
+  // Tell other clients to unreceive the message
+  socket.on('unsend_messages', function (messages) {
+    socket.broadcast.emit('unreceive_messages', messages);
   });
   
 });
