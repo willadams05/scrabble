@@ -55,13 +55,13 @@ export class Scrabble extends Phaser.Scene{
         // Number of receives from the mailbox since the last checkpoint.
         this.num_receives = 0;  // Messages received each time opponent places/removes tiles, turns change, and words are submitted
         // When this many receives have occurred, save a checkpoint
-        this.receive_limit = 5;
+        this.receive_limit = 1;
         // An array that stores all messages sent to the server
         this.sends = [];
         // Number of sends to the mailbox since the last checkpoint.
         this.num_sends = 0;     // Messages sent each time a tile is placed or removed
         // When this many sends have occurred, save a checkpoint
-        this.send_limit = 5;
+        this.send_limit = 1;
         // The list of checkpoints stored on this client
         this.checkpoints = [];
     }
@@ -242,15 +242,20 @@ export class Scrabble extends Phaser.Scene{
 
         // If any messages on this client need to be unreceived, rollback to checkpoint before the receive.
         socket.on('unreceive_messages', (messages)=> {
-            for(let i = 0; i < messages.length; i++) {
-                for(let j = 0; j < this.receives.length; j++) {
-                    if(messages[i].timestamp == this.receives[j].timestamp) {
-                        console.log('Message Unreceived -- Rolling Back');
-                        this.rollback(messages[i].timestamp);
-                        return;
+            let earliest = null;
+            let i = this.receives.length;
+            while(i--) {
+                for(let j = 0; j < messages.length; j++) {
+                    if(messages[j].timestamp == this.receives[i].timestamp) {
+                        this.receives.splice(i, 1);
+                        if(earliest == null || messages[j].timestamp < earliest)
+                            earliest = messages[j].timestamp;
+                        break;
                     }
                 }
             }
+            console.log('Message Unreceived -- Rolling Back');
+            this.rollback(earliest);
         });
         
         // Called when current player submits an incorrect word and when unreceiving messages from other clients
@@ -673,32 +678,21 @@ export class Scrabble extends Phaser.Scene{
 
         // Unsend all of the messages sent after the checkpoint
         let unsends = [];
-        for(let i = 0; i < this.sends.length; i++) {
-            let message = this.sends[i];
+        let i = this.sends.length;
+        while(i--) {
+            let message = this.sends[i];     
             if(message.timestamp > checkpoint.timestamp) {
                 console.log('Unsending Message: ', message);
                 unsends.push(message);
                 // Remove the message from the sends list
-                // @TODO: Make sure this works
-                sends.splice(i, 1);
+                this.sends.splice(i, 1);
             }
         }
         // Let other clients know that this message is being unsent
         if(unsends.length != 0)
             socket.emit('unsend_messages', unsends);
 
-        // @TODO:
-        // Load the system state from the most recent checkpoint
-        // M-Propagation:
-        //      a. Restore system state from checkpoint on current client
-        //      b. Check if any messages need to be unsent by finding messages sent after the checkpoint in sends array
-        //          b1. If messages unsent, emit "unreceive" message to server
-        //          b2. If client receives "unreceive" message, must roll back to checkpoint before timestamp in "unreceive"???
-        // R-Propagation:
-        //      a. Restore system state from checkpoint on current client
-        //      b. Check if messages need to be unsent as before
-        //          b1. If messages are unsent, emit "unreceive" message to server
-        //          b2. If client receives "unreceive" message and it makes send list not a prefix of receive list, must rollback 
+        // @TODO: Need to worry about unreceiving on R-propagation (ensure that receive list is still prefix of send list)
     }
 
     // Redraw the tile images from an array
