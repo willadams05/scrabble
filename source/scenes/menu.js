@@ -23,20 +23,22 @@ export class Menu extends Phaser.Scene{
             this.scene.start(CONSTANTS.SCENES.SCRABBLE);
         })
 
-        var element = this.add.dom(50, 50).createFromCache('inputform');
-        console.log('Dom Element:', element);
-        element.addListener('click');
-        element.on('click', function (event) {
-            if (event.target.name === 'playButton')
-            {
-                var receiveText = this.getChildByName('receiveField');
-                var sendText = this.getChildByName('sendField');
-                //  Have they entered anything?
-                if (receiveText.value !== '')
-                    console.log('Number of Receives Before Checkpoint:', receiveText.value);
-                if(sendText.value != '')
-                    console.log('Number of Sends Before Checkpoint:', sendText.value);
-            }
-        });
+        document.getElementById("checkpoints").textContent = "it works"
+
+        // var element = this.add.dom(-20, -20).createFromCache('inputform');
+        // console.log('Dom Element:', element);
+        // element.addListener('click');
+        // element.on('click', function (event) {
+        //     if (event.target.name === 'playButton')
+        //     {
+        //         var receiveText = this.getChildByName('receiveField');
+        //         var sendText = this.getChildByName('sendField');
+        //         //  Have they entered anything?
+        //         if (receiveText.value !== '')
+        //             console.log('Number of Receives Before Checkpoint:', receiveText.value);
+        //         if(sendText.value != '')
+        //             console.log('Number of Sends Before Checkpoint:', sendText.value);
+        //     }
+        // });
     }
 }

@@ -6,12 +6,50 @@
         <style>body {margin: auto;padding: 0;}</style>
         
         <script src="/socket.io/socket.io.js"></script>
-
         <script src="/lib/phaser.js"></script>
-        <script type="module" src="source/main.js"></script>
-
+        
+        <style>
+            #menu {
+              background-color: lightblue;
+              width: 250px;
+              float: left;
+              border: 1px solid black;
+            }
+            #game-area {
+              background-color: lightblue;
+              
+            }
+        </style>
     </head>
     <body>
         <!-- <div id="phaser"></div> -->
+        <div id="all">
+        <div id="menu">
+        <h4>Number of marks before every command:</h4>
+         <select id="mark">
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+        </select> 
+        <br>
+        <h4>Other setting:</h4>
+         <select id="other">
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+        </select>
+        <br>
+        <h4>List of checkpoints:</h4><br>
+         <textarea id = "checkpoints" rows="7" cols="50">
+            Put checkpoints here...
+        </textarea> 
+        </div>
+
+        <div id="game-area"></div>
+        </div>
+        <script type="module" src="source/main.js"></script>
+
+
+        
     </body>
 </html>
