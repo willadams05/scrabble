@@ -14,7 +14,14 @@ export class Scrabble extends Phaser.Scene{
         })
     }
 
-    init() {
+    init(data) {
+        console.log('Data From Menu:', data);
+        // When this many receives have occurred, save a checkpoint
+        this.receive_limit = data.receive_limit;
+        // When this many sends have occurred, save a checkpoint
+        this.send_limit = data.send_limit
+        // If the MRS flag is true, then save checkpoints according to Mark->Send->Receive scheme
+        this.mrs = data.mrs;
         // Dict of all tiles and their corresponding point values
         this.tile_scores = {
             'A': 1, 'B': 3, 'C': 3, 'D': 2, 'E': 1, 'F': 4, 'G': 2, 'H': 4,
@@ -42,26 +49,22 @@ export class Scrabble extends Phaser.Scene{
         this.opponent_tiles = [];
         // Flag that determines who can currently make moves on the board.
         this.my_turn = false;
+        // The player's index in the server's connection list
+        this.turn_idx = -1;
         // Flag that determines if this is the initial checkpoint or not
         this.initial_save = true;
         // Message displaying that it is the opponent's turn
         this.opponent_image = null;
         // Message displaying that not all opponents have joined
         this.waiting_image = null;
-        // Message displaying when a checkpoint has been saved
-        this.checkpoint_image = null;
         // An array that stores all messages received from the server
         this.receives = [];
         // Number of receives from the mailbox since the last checkpoint.
         this.num_receives = 0;  // Messages received each time opponent places/removes tiles, turns change, and words are submitted
-        // When this many receives have occurred, save a checkpoint
-        this.receive_limit = 1;
         // An array that stores all messages sent to the server
         this.sends = [];
         // Number of sends to the mailbox since the last checkpoint.
         this.num_sends = 0;     // Messages sent each time a tile is placed or removed
-        // When this many sends have occurred, save a checkpoint
-        this.send_limit = 1;
         // The list of checkpoints stored on this client
         this.checkpoints = [];
     }
@@ -82,6 +85,8 @@ export class Scrabble extends Phaser.Scene{
     }
 
     create() {
+        document.getElementById("checkpoints").textContent = "No Checkpoints"
+
         document.addEventListener('contextmenu', function(event){
             event.preventDefault();
         });
@@ -113,8 +118,8 @@ export class Scrabble extends Phaser.Scene{
     }
 
     setSocketEvents() {
-        socket.on('init', function(data) {
-            console.log(data);
+        socket.on('init', (data)=>{
+            this.turn_idx = data;
             socket.emit('success', 'Connection Successful');
         });
 
@@ -139,16 +144,10 @@ export class Scrabble extends Phaser.Scene{
 
         // Begin turn (enable commands), remove "Opponent's Turn" message
         socket.on('start_turn', ()=> {
-            this.num_receives++;
             console.log('Starting Turn');
             if(this.opponent_image != null)
                 this.opponent_image.destroy();
             this.my_turn = true;
-
-            if(this.checkpoint_image != null)
-                this.checkpoint_image.destroy();
-            if(this.num_receives >= this.receive_limit)
-                this.saveState();
         });
 
         // When another player places a tile, place it on this player's board
@@ -161,8 +160,6 @@ export class Scrabble extends Phaser.Scene{
             // Add the tile's image to this scene
             tile.image = this.add.image(tile.image.x, tile.image.y, tile.letter);
 
-            if(this.checkpoint_image != null)
-                this.checkpoint_image.destroy();
             if(this.num_receives >= this.receive_limit)
                 this.saveState();
         });
@@ -185,20 +182,13 @@ export class Scrabble extends Phaser.Scene{
             // Remove the tile image from the scene
             removed_tile.image.destroy();
 
-            if(this.checkpoint_image != null)
-                this.checkpoint_image.destroy();
             if(this.num_receives >= this.receive_limit)
                 this.saveState();
         });
-        
+
         // Called when current player has submitted a correct word
         socket.on('words_added', (message)=> {
-            this.receives.push(message);
-            this.num_receives++;
             console.log('Correct Words Added: ', message.data);
-
-            // Load as many new tiles as were used on the last successful word
-            socket.emit('load_tiles', this.num_clickable);
 
             // Set all of the tiles used for the last word(s) to be unclickable
             for(let i = 0; i < this.current_horizontal.length; i++) {
@@ -208,36 +198,27 @@ export class Scrabble extends Phaser.Scene{
                 this.makePermanent(this.current_vertical[j]);
             }
 
-            // Reset the current words, direction, and # of used tiles
-            this.current_horizontal = [];
-            this.current_vertical = [];
-            this.direction = '';
-            this.num_clickable = 0;
-
             // End the user's turn
             console.log('Ending Turn');
             this.opponent_image = this.add.image(350, 50, 'opponent-turn');
             this.my_turn = false;
 
-            if(this.checkpoint_image != null)
-                this.checkpoint_image.destroy();
-            if(this.num_receives >= this.receive_limit)
-                this.saveState();
+            // Load as many new tiles as were used on the last successful word
+            socket.emit('load_tiles', this.num_clickable);
+
+            // Reset the current words, direction, and # of used tiles
+            this.current_horizontal = [];
+            this.current_vertical = [];
+            this.direction = '';
+            this.num_clickable = 0;
         });
 
         // When another player has submitted a correct word, make the tiles permanent and clear the current opponent tiles.
         socket.on('opponent_words_added', (message)=> {
-            this.receives.push(message);
-            this.num_receives++;
             console.log('Opponent Added Words:', message.data);
             for(let i = 0; i < this.opponent_tiles.length; i++)
                 this.makePermanent(this.opponent_tiles[i]);
             this.opponent_tiles = [];
-
-            if(this.checkpoint_image != null)
-                this.checkpoint_image.destroy();
-            if(this.num_receives >= this.receive_limit)
-                this.saveState();
         });
 
         // If any messages on this client need to be unreceived, rollback to checkpoint before the receive.
@@ -350,9 +331,6 @@ export class Scrabble extends Phaser.Scene{
         this.sends.push(message);
         this.num_sends++;
 
-        if(this.checkpoint_image != null)
-            this.checkpoint_image.destroy();
-
         // Remove the tile from the currently stored word (replace with null)
         if(this.current_horizontal.length != 0)
             this.removeFromWord(tile, this.current_horizontal, 'horizontal');
@@ -443,9 +421,6 @@ export class Scrabble extends Phaser.Scene{
                 socket.emit(message.label, message);
                 this.sends.push(message);
                 this.num_sends++;
-
-                if(this.checkpoint_image != null)
-                    this.checkpoint_image.destroy();
 
                 // Determine the new current word(s) according to where the tile was placed
                 // @TODO: Currently only 1 vertical / 1 horizontal word is possible, need to extend to more
@@ -547,7 +522,7 @@ export class Scrabble extends Phaser.Scene{
         // Verify that the word(s) is/are correct
         var message = new Message('words_submitted', words);
         socket.emit(message.label, message);
-    }
+    } 
 
     // Set the currentt tile to be unclickable and store it in submitted_tiles
     makePermanent(tile) {
@@ -566,9 +541,6 @@ export class Scrabble extends Phaser.Scene{
                 this.sends.push(message);
                 this.num_sends++;
                 this.moveToDeck(tile);
-
-                if(this.checkpoint_image != null)
-                    this.checkpoint_image.destroy();
             }
         }
         for(let j = 0; j < this.current_vertical.length; j++) {
@@ -580,9 +552,6 @@ export class Scrabble extends Phaser.Scene{
                 this.sends.push(message);
                 this.num_sends++;
                 this.moveToDeck(tile);
-
-                if(this.checkpoint_image != null)
-                    this.checkpoint_image.destroy();
             }
         }
         this.num_clickable = 0;
@@ -643,7 +612,6 @@ export class Scrabble extends Phaser.Scene{
 
     // Creates a new checkpoint with the current system state 
     saveState() {
-        this.checkpoint_image = this.add.image(80, 20, 'checkpoint');
         // There have been no sends or receives since this checkpoint
         this.num_receives = 0, this.num_sends = 0;
         let checkpoint = new State(this.current_vertical, this.current_horizontal, this.direction, 
@@ -652,6 +620,13 @@ export class Scrabble extends Phaser.Scene{
         this.checkpoints.push(checkpoint);
         console.log('Saving System State At:', checkpoint.timestamp);
         console.log('Checkpoint:', checkpoint);
+
+        let checkpoint_message = "";
+        for(let i = 0; i < this.checkpoints.length; i++) {
+            let temp = this.checkpoints[i];
+            checkpoint_message += ("Checkpoint At " + temp.timestamp + "\n");
+        }
+        document.getElementById("checkpoints").textContent = checkpoint_message;
     }
 
     // Restores the system state from a specific checkpoint  
@@ -668,6 +643,17 @@ export class Scrabble extends Phaser.Scene{
         this.submitted_tiles = JSON.parse(JSON.stringify(checkpoint.submitted_tiles));
         this.opponent_tiles = JSON.parse(JSON.stringify(checkpoint.opponent_tiles));
         this.my_turn = checkpoint.my_turn;
+
+        // Redraw the "Opponent's Turn" message if necessary
+        if(!this.my_turn)
+            this.opponent_image = this.add.image(350, 50, 'opponent-turn');
+        else {
+            // @TODO: Fix this
+            console.log('Setting Server Turn Index To:', this.turn_idx);
+            socket.emit('my_turn', this.turn_idx);
+            if(this.opponent_image != null)
+                this.opponent_image.destroy();
+        }
         
         // Redraw all of the images
         this.redrawTileArray(this.current_horizontal);

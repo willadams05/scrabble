@@ -28,7 +28,7 @@ var turn_idx = 0;
 
 io.on('connection', function (socket) {
   console.log("Connection on Socket ID: ", socket.id);
-  socket.emit('init', 'Connection Initialized');
+  socket.emit('init', connections.length);
 
   socket.on('success', function (data) {
     console.log(data);
@@ -95,6 +95,11 @@ io.on('connection', function (socket) {
   socket.on('unsend_messages', function (messages) {
     socket.broadcast.emit('unreceive_messages', messages);
   });
+
+  // Client has reported that he is done restoring state and it is his turn.
+  socket.on('my_turn', function(index) {
+    turn_idx = index;
+  })
   
 });
 
