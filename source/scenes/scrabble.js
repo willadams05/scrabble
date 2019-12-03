@@ -146,8 +146,8 @@ export class Scrabble extends Phaser.Scene{
         // Begin turn (enable commands), remove "Opponent's Turn" message
         socket.on('start_turn', ()=> {
             console.log('Starting Turn');
-            if(this.opponent_image != null)
-                this.opponent_image.destroy();
+            this.opponent_image.visible = false;
+            console.log('DESTROYING OPPONENT IMAGE2##########');
             this.my_turn = true;
         });
 
@@ -201,7 +201,7 @@ export class Scrabble extends Phaser.Scene{
 
             // End the user's turn
             console.log('Ending Turn');
-            this.opponent_image = this.add.image(350, 50, 'opponent-turn');
+            this.opponent_image.visible = true;
             this.my_turn = false;
 
             // Load as many new tiles as were used on the last successful word
@@ -630,11 +630,13 @@ export class Scrabble extends Phaser.Scene{
         console.log('Checkpoint:', checkpoint);
 
         // Remove the checkpoint from the checkpoint list
+        // @TODO: Potential issue: If send/receive limits are 1, then one client's checkpoint list can get uneven
+        // if one of the clients keeps submiting a bad word. In this case, the submitting client keeps removing the last checkpoint
+        // but the receiving client keeps adding new ones, never removing. So, list gets pretty wack.
         let i = this.checkpoints.length;
         while(i--) {
-            if(this.checkpoints[i].timestamp == checkpoint.timestamp) {
+            if(this.checkpoints[i].timestamp >= checkpoint.timestamp) {
                 this.checkpoints.splice(i, 1);
-                break;
             }
         }
         this.redrawCheckpoints();
@@ -651,14 +653,16 @@ export class Scrabble extends Phaser.Scene{
         this.my_turn = checkpoint.my_turn;
 
         // Redraw the "Opponent's Turn" message if necessary
-        if(!this.my_turn)
-            this.opponent_image = this.add.image(350, 50, 'opponent-turn');
+        if(!this.my_turn) {
+            this.opponent_image.visible = true;
+            console.log('ADDING OPPONENT IMAGE1##########');
+        }
         else {
-            // @TODO: Fix this
+            // @TODO: Make sure that this works
             console.log('Setting Server Turn Index To:', this.turn_idx);
             socket.emit('my_turn', this.turn_idx);
-            if(this.opponent_image != null)
-                this.opponent_image.destroy();
+            this.opponent_image.visible = false;
+            console.log('DESTROYING OPPONENT IMAGE1###########');
         }
         
         // Redraw all of the images
