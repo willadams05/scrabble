@@ -149,7 +149,6 @@ export class Scrabble extends Phaser.Scene{
         socket.on('start_turn', ()=> {
             console.log('Starting Turn');
             this.opponent_image.visible = false;
-            console.log('DESTROYING OPPONENT IMAGE2##########');
             this.my_turn = true;
         });
 
@@ -638,8 +637,8 @@ export class Scrabble extends Phaser.Scene{
         // but the receiving client keeps adding new ones, never removing. So, list gets pretty wack.
         let i = this.checkpoints.length;
         while(i--) {
-            // Remove all checkpoints that were stored at and after the one we're rolling back to (don't remove initial)
-            if(this.checkpoints[i].timestamp >= checkpoint.timestamp && this.checkpoints[i].checkpoint_count != 1) {
+            // Remove all checkpoints that were stored after the one we're rolling back to
+            if(this.checkpoints[i].timestamp > checkpoint.timestamp) {
                 this.checkpoints.splice(i, 1);
             }
         }
@@ -659,14 +658,12 @@ export class Scrabble extends Phaser.Scene{
         // Redraw the "Opponent's Turn" message if necessary
         if(!this.my_turn) {
             this.opponent_image.visible = true;
-            console.log('ADDING OPPONENT IMAGE1##########');
         }
         else {
             // @TODO: Make sure that this works
             console.log('Setting Server Turn Index To:', this.turn_idx);
             socket.emit('my_turn', this.turn_idx);
             this.opponent_image.visible = false;
-            console.log('DESTROYING OPPONENT IMAGE1###########');
         }
         
         // Redraw all of the images
