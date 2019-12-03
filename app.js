@@ -89,6 +89,7 @@ io.on('connection', function (socket) {
       turn_idx = 0;
     // Let the next client in line know that it is their turn
     io.to(`${connections[turn_idx++]}`).emit('start_turn');
+    console.log('Starting Turn for Player ' + turn_idx);
   });
 
   // Tell other clients to unreceive the message
@@ -96,9 +97,9 @@ io.on('connection', function (socket) {
     socket.broadcast.emit('unreceive_messages', messages);
   });
 
-  // Client has reported that he is done restoring state and it is his turn.
+  // Client has reported that he is done restoring state and it is his turn, set turn to current+1
   socket.on('my_turn', function(index) {
-    turn_idx = index;
+    turn_idx = index+1;
   })
   
 });

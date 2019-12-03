@@ -120,6 +120,7 @@ export class Scrabble extends Phaser.Scene{
     setSocketEvents() {
         socket.on('init', (data)=>{
             this.turn_idx = data;
+            console.log('Player ' + this.turn_idx + ' Connected.');
             socket.emit('success', 'Connection Successful');
         });
 
@@ -620,19 +621,24 @@ export class Scrabble extends Phaser.Scene{
         this.checkpoints.push(checkpoint);
         console.log('Saving System State At:', checkpoint.timestamp);
         console.log('Checkpoint:', checkpoint);
-
-        let checkpoint_message = "";
-        for(let i = 0; i < this.checkpoints.length; i++) {
-            let temp = this.checkpoints[i];
-            checkpoint_message += ("Checkpoint At " + temp.timestamp + "\n");
-        }
-        document.getElementById("checkpoints").textContent = checkpoint_message;
+        this.redrawCheckpoints();
     }
 
     // Restores the system state from a specific checkpoint  
     restoreState(checkpoint) {
         console.log('Rolling Back To Checkpoint At:', checkpoint.timestamp);
         console.log('Checkpoint:', checkpoint);
+
+        // Remove the checkpoint from the checkpoint list
+        let i = this.checkpoints.length;
+        while(i--) {
+            if(this.checkpoints[i].timestamp == checkpoint.timestamp) {
+                this.checkpoints.splice(i, 1);
+                break;
+            }
+        }
+        this.redrawCheckpoints();
+
         // Set all of the necessary variables
         this.current_vertical = JSON.parse(JSON.stringify(checkpoint.current_vertical));
         this.current_horizontal = JSON.parse(JSON.stringify(checkpoint.current_horizontal));
@@ -664,14 +670,14 @@ export class Scrabble extends Phaser.Scene{
 
         // Unsend all of the messages sent after the checkpoint
         let unsends = [];
-        let i = this.sends.length;
-        while(i--) {
-            let message = this.sends[i];     
+        let j = this.sends.length;
+        while(j--) {
+            let message = this.sends[j];     
             if(message.timestamp > checkpoint.timestamp) {
                 console.log('Unsending Message: ', message);
                 unsends.push(message);
                 // Remove the message from the sends list
-                this.sends.splice(i, 1);
+                this.sends.splice(j, 1);
             }
         }
         // Let other clients know that this message is being unsent
@@ -701,6 +707,16 @@ export class Scrabble extends Phaser.Scene{
             tile.image = this.add.image(tile.image.x, tile.image.y, tile.letter);
             this.setTileEvents(tile);
         }
+    }
+
+    // Redraw the checkpoint list on the side menu
+    redrawCheckpoints() {
+        let checkpoint_message = "";
+        for(let i = 0; i < this.checkpoints.length; i++) {
+            let temp = this.checkpoints[i];
+            checkpoint_message += ("Checkpoint At " + temp.timestamp + "\n");
+        }
+        document.getElementById("checkpoints").textContent = checkpoint_message;
     }
 }
 
