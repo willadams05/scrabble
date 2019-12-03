@@ -16,12 +16,15 @@ export class Scrabble extends Phaser.Scene{
 
     init(data) {
         console.log('Data From Menu:', data);
-        // When this many receives have occurred, save a checkpoint
-        this.receive_limit = data.receive_limit;
-        // When this many sends have occurred, save a checkpoint
-        this.send_limit = data.send_limit
         // If the MRS flag is true, then save checkpoints according to Mark->Send->Receive scheme
         this.mrs = data.mrs;
+        // Store whether the last command was a send or receive to check whether to store an MRS checkpoint
+        this.old_command = '';
+        this.new_command = '';
+        // When this many receives have occurred, save a checkpoint
+        this.receive_limit = this.mrs ? -1 : data.receive_limit;
+        // When this many sends have occurred, save a checkpoint
+        this.send_limit = this.mrs ? -1 : data.send_limit;
         // Dict of all tiles and their corresponding point values
         this.tile_scores = {
             'A': 1, 'B': 3, 'C': 3, 'D': 2, 'E': 1, 'F': 4, 'G': 2, 'H': 4,
@@ -154,22 +157,40 @@ export class Scrabble extends Phaser.Scene{
 
         // When another player places a tile, place it on this player's board
         socket.on('tile_placed', (message)=> {
+            // Checks whether a checkpoint should be placed after the last send/receive according to the MRS scheme
+            if(this.mrs && this.old_command == 'send' && this.new_command == 'receive')
+                this.saveState();
+
             this.receives.push(message);
             this.num_receives++;
+
+            // Store the new receive command for MRS checking
+            this.old_command = this.new_command;
+            this.new_command = 'receive';
+            
             let tile = message.data;
             console.log('Opponent Placed Tile:', tile.letter);
             this.opponent_tiles.push(tile);
             // Add the tile's image to this scene
             tile.image = this.add.image(tile.image.x, tile.image.y, tile.letter);
 
-            if(this.num_receives >= this.receive_limit)
+            if(!this.mrs && this.num_receives >= this.receive_limit)
                 this.saveState();
         });
         
         // When another player removes a tile, remove it from this player's board
         socket.on('tile_removed', (message)=> {
+            // Checks whether a checkpoint should be placed after the last send/receive according to the MRS scheme
+            if(this.mrs && this.old_command == 'send' && this.new_command == 'receive')
+                this.saveState();
+
             this.receives.push(message);
             this.num_receives++;
+
+            // Store the new receive command for MRS checking
+            this.old_command = this.new_command;
+            this.new_command = 'receive';
+
             let tile = message.data;
             console.log('Opponent Removed Tile:', tile.letter);
             // Remove the tile from the opponent's tile array and remove from the screen
@@ -184,7 +205,7 @@ export class Scrabble extends Phaser.Scene{
             // Remove the tile image from the scene
             removed_tile.image.destroy();
 
-            if(this.num_receives >= this.receive_limit)
+            if(!this.mrs && this.num_receives >= this.receive_limit)
                 this.saveState();
         });
 
@@ -332,6 +353,10 @@ export class Scrabble extends Phaser.Scene{
         socket.emit(message.label, message);
         this.sends.push(message);
         this.num_sends++;
+        
+        // Store the new send command for MRS checking
+        this.old_command = this.new_command;
+        this.new_command = 'send';
 
         // Remove the tile from the currently stored word (replace with null)
         if(this.current_horizontal.length != 0)
@@ -361,7 +386,8 @@ export class Scrabble extends Phaser.Scene{
         else if(this.current_vertical.length == 1 && this.current_horizontal.length == 0)
             this.current_horizontal.push(this.current_vertical[0]);
 
-        if(this.num_sends >= this.send_limit)
+
+        else if(!this.mrs && this.num_sends >= this.send_limit)
             this.saveState();
 
         console.log('Tile Removed - New Horizontal Word:', getWord(this.current_horizontal));
@@ -424,6 +450,10 @@ export class Scrabble extends Phaser.Scene{
                 this.sends.push(message);
                 this.num_sends++;
 
+                // Store the new send command for MRS checking
+                this.old_command = this.new_command;
+                this.new_command = 'send';
+
                 // Determine the new current word(s) according to where the tile was placed
                 // @TODO: Currently only 1 vertical / 1 horizontal word is possible, need to extend to more
                 this.addToWord(this.selected_tile, word_index);
@@ -441,7 +471,7 @@ export class Scrabble extends Phaser.Scene{
 
                 this.selected_tile = null;
 
-                if(this.num_sends >= this.send_limit)
+                if(!this.mrs && this.num_sends >= this.send_limit)
                     this.saveState();
 
                 if(this.current_horizontal.length > 0)
@@ -543,6 +573,10 @@ export class Scrabble extends Phaser.Scene{
                 this.sends.push(message);
                 this.num_sends++;
                 this.moveToDeck(tile);
+
+                // Store the new send command for MRS checking
+                this.old_command = this.new_command;
+                this.new_command = 'send';
             }
         }
         for(let j = 0; j < this.current_vertical.length; j++) {
@@ -554,6 +588,10 @@ export class Scrabble extends Phaser.Scene{
                 this.sends.push(message);
                 this.num_sends++;
                 this.moveToDeck(tile);
+
+                // Store the new send command for MRS checking
+                this.old_command = this.new_command;
+                this.new_command = 'send';
             }
         }
         this.num_clickable = 0;
@@ -561,7 +599,7 @@ export class Scrabble extends Phaser.Scene{
         this.current_vertical = [];
         this.direction = '';
 
-        if(this.num_sends >= this.send_limit)
+        if(!this.mrs && this.num_sends >= this.send_limit)
             this.saveState();
 
         console.log('Cleared Current Words');
@@ -615,7 +653,7 @@ export class Scrabble extends Phaser.Scene{
     // Creates a new checkpoint with the current system state 
     saveState() {
         // There have been no sends or receives since this checkpoint
-        this.num_receives = 0, this.num_sends = 0;
+        this.num_receives = 0, this.num_sends = 0, this.old_command = '', this.new_command = '';
         let checkpoint = new State(this.checkpoint_count, this.current_vertical, this.current_horizontal, this.direction, 
                                    this.num_clickable, this.selected_tile, this.current_tiles, 
                                    this.submitted_tiles, this.opponent_tiles, this.my_turn);
@@ -631,13 +669,9 @@ export class Scrabble extends Phaser.Scene{
         console.log('Rolling Back To Checkpoint At:', checkpoint.timestamp);
         console.log('Checkpoint:', checkpoint);
 
-        // Remove the checkpoint from the checkpoint list
-        // @TODO: Potential issue: If send/receive limits are 1, then one client's checkpoint list can get uneven
-        // if one of the clients keeps submiting a bad word. In this case, the submitting client keeps removing the last checkpoint
-        // but the receiving client keeps adding new ones, never removing. So, list gets pretty wack.
+        // Remove all checkpoints that were stored after the one we're rolling back to
         let i = this.checkpoints.length;
         while(i--) {
-            // Remove all checkpoints that were stored after the one we're rolling back to
             if(this.checkpoints[i].timestamp > checkpoint.timestamp) {
                 this.checkpoints.splice(i, 1);
             }
@@ -645,6 +679,7 @@ export class Scrabble extends Phaser.Scene{
         this.redrawCheckpoints();
 
         // Set all of the necessary variables
+        this.num_receives = 0, this.num_sends = 0;
         this.current_vertical = JSON.parse(JSON.stringify(checkpoint.current_vertical));
         this.current_horizontal = JSON.parse(JSON.stringify(checkpoint.current_horizontal));
         this.direction = checkpoint.direction;
