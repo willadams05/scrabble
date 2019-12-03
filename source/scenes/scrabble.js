@@ -67,6 +67,8 @@ export class Scrabble extends Phaser.Scene{
         this.num_sends = 0;     // Messages sent each time a tile is placed or removed
         // The list of checkpoints stored on this client
         this.checkpoints = [];
+        // The total number of checkpoints that have been placed (used for side menu)
+        this.checkpoint_count = 1;
     }
 
     preload() {
@@ -615,10 +617,11 @@ export class Scrabble extends Phaser.Scene{
     saveState() {
         // There have been no sends or receives since this checkpoint
         this.num_receives = 0, this.num_sends = 0;
-        let checkpoint = new State(this.current_vertical, this.current_horizontal, this.direction, 
+        let checkpoint = new State(this.checkpoint_count, this.current_vertical, this.current_horizontal, this.direction, 
                                    this.num_clickable, this.selected_tile, this.current_tiles, 
                                    this.submitted_tiles, this.opponent_tiles, this.my_turn);
         this.checkpoints.push(checkpoint);
+        this.checkpoint_count++;
         console.log('Saving System State At:', checkpoint.timestamp);
         console.log('Checkpoint:', checkpoint);
         this.redrawCheckpoints();
@@ -635,7 +638,8 @@ export class Scrabble extends Phaser.Scene{
         // but the receiving client keeps adding new ones, never removing. So, list gets pretty wack.
         let i = this.checkpoints.length;
         while(i--) {
-            if(this.checkpoints[i].timestamp >= checkpoint.timestamp) {
+            // Remove all checkpoints that were stored at and after the one we're rolling back to (don't remove initial)
+            if(this.checkpoints[i].timestamp >= checkpoint.timestamp && this.checkpoints[i].checkpoint_count != 1) {
                 this.checkpoints.splice(i, 1);
             }
         }
@@ -718,7 +722,7 @@ export class Scrabble extends Phaser.Scene{
         let checkpoint_message = "";
         for(let i = 0; i < this.checkpoints.length; i++) {
             let temp = this.checkpoints[i];
-            checkpoint_message += ("Checkpoint At " + temp.timestamp + "\n");
+            checkpoint_message += ("Checkpoint " + temp.checkpoint_count + " @ T=" + temp.timestamp + "\n");
         }
         document.getElementById("checkpoints").textContent = checkpoint_message;
     }

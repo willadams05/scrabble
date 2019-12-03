@@ -1,6 +1,7 @@
 export class State {
-    constructor(vertical, horizontal, direction, num_clickable, selected_tile, 
+    constructor(count, vertical, horizontal, direction, num_clickable, selected_tile, 
                 current_tiles, submitted_tiles, opponent_tiles, turn) {
+        this.checkpoint_count = count;
         // Create deep copy of the vertical word array
         this.current_vertical = JSON.parse(JSON.stringify(vertical));
         // Create deep copy of the horizontal word array
