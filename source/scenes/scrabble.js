@@ -15,16 +15,6 @@ export class Scrabble extends Phaser.Scene{
     }
 
     init(data) {
-
-        document.getElementById('delete-checkpoint').onclick = function() {
-           alert("delete " + document.getElementById("checkpoints").selectedIndex);
-        };
-
-        document.getElementById('goto-checkpoint').onclick = function() {
-           alert("goto " + document.getElementById("checkpoints").selectedIndex);
-        };
-
-
         console.log('Data From Menu:', data);
         // If the MRS flag is true, then save checkpoints according to Mark->Send->Receive scheme
         this.mrs = data.mrs;
@@ -100,7 +90,13 @@ export class Scrabble extends Phaser.Scene{
     }
 
     create() {
-        //document.getElementById("checkpoints").textContent = "No Checkpoints"
+        document.getElementById('delete-checkpoint').onclick = ()=>{
+            this.purgeState(this.checkpoints[document.getElementById('checkpoints').selectedIndex]);
+         };
+ 
+         document.getElementById('goto-checkpoint').onclick = ()=> {
+            this.restoreState(this.checkpoints[document.getElementById('checkpoints').selectedIndex]);
+         };
 
         document.addEventListener('contextmenu', function(event){
             event.preventDefault();
@@ -465,7 +461,6 @@ export class Scrabble extends Phaser.Scene{
                 this.new_command = 'send';
 
                 // Determine the new current word(s) according to where the tile was placed
-                // @TODO: Currently only 1 vertical / 1 horizontal word is possible, need to extend to more
                 this.addToWord(this.selected_tile, word_index);
 
                 // Increase the number of clickable tiles on the screen (must do addToWord)
@@ -545,7 +540,6 @@ export class Scrabble extends Phaser.Scene{
         let words = [], word_count = 0;
         let h_word = getWord(this.current_horizontal), v_word = getWord(this.current_vertical);
         // If either of the words has a null character in it, it is not valid to submit.
-        // @TODO: Display error message to the player.
         if((h_word.length == 0 && v_word.length == 0) || h_word.includes('*') || v_word.includes('*')) {
             console.log('Cannot Submit -- Incomplete Word');
             return;
@@ -618,8 +612,6 @@ export class Scrabble extends Phaser.Scene{
     // Initiates the rollback procedure (clears bord and restores state from first checkpoint after timestamp)
     rollback(timestamp) {
         console.log('Rolling Back Before:', timestamp);
-        // Destroy all of the tile images on the board
-        this.clearBoard();
         // Restore state from the most recent checkpoint before the timestamp of the message being unsent / unreceived
         let checkpoint = this.checkpoints[0];
         for(let i = 1; i < this.checkpoints.length; i++) {
@@ -628,6 +620,95 @@ export class Scrabble extends Phaser.Scene{
             checkpoint = this.checkpoints[i];
         }
         this.restoreState(checkpoint);
+    }
+
+    // Creates a new checkpoint with the current system state 
+    saveState() {
+        // There have been no sends or receives since this checkpoint
+        this.num_receives = 0, this.num_sends = 0, this.old_command = '', this.new_command = '';
+        let checkpoint = new State(this.checkpoint_count, this.current_vertical, this.current_horizontal, this.direction, 
+                                   this.num_clickable, this.selected_tile, this.current_tiles, 
+                                   this.submitted_tiles, this.opponent_tiles, this.my_turn);
+        this.checkpoints.push(checkpoint);
+        this.checkpoint_count++;
+        console.log('Saving System State At:', checkpoint.timestamp);
+        console.log('Checkpoint:', checkpoint);
+        this.redrawCheckpoints();
+    }
+
+    // Restores the system state from a specific checkpoint  
+    restoreState(checkpoint) {
+        console.log('Rolling Back To Checkpoint At:', checkpoint.timestamp);
+        console.log('Checkpoint:', checkpoint);
+
+        // Destroy all of the tile images on the board
+        this.clearBoard();
+
+        // Remove all checkpoints that were stored after the one we're rolling back to
+        let i = this.checkpoints.length;
+        while(i--) {
+            if(this.checkpoints[i].timestamp > checkpoint.timestamp) {
+                this.checkpoints.splice(i, 1);
+            }
+        }
+        this.redrawCheckpoints();
+
+        // Set all of the necessary variables
+        this.num_receives = 0, this.num_sends = 0;
+        this.current_vertical = JSON.parse(JSON.stringify(checkpoint.current_vertical));
+        this.current_horizontal = JSON.parse(JSON.stringify(checkpoint.current_horizontal));
+        this.direction = checkpoint.direction;
+        this.num_clickable = checkpoint.num_clickable;
+        this.selected_tile = checkpoint.selected_tile;
+        this.current_tiles = JSON.parse(JSON.stringify(checkpoint.current_tiles));
+        this.submitted_tiles = JSON.parse(JSON.stringify(checkpoint.submitted_tiles));
+        this.opponent_tiles = JSON.parse(JSON.stringify(checkpoint.opponent_tiles));
+        this.my_turn = checkpoint.my_turn;
+
+        // Redraw the "Opponent's Turn" message if necessary
+        if(!this.my_turn) {
+            this.opponent_image.visible = true;
+        }
+        else {
+            console.log('Setting Server Turn Index To:', this.turn_idx);
+            socket.emit('my_turn', this.turn_idx);
+            this.opponent_image.visible = false;
+        }
+        
+        // Redraw all of the tile images on the board
+        this.redrawBoard();
+
+        // Unsend all of the messages sent after the checkpoint
+        let unsends = [];
+        let j = this.sends.length;
+        while(j--) {
+            let message = this.sends[j];     
+            if(message.timestamp > checkpoint.timestamp) {
+                console.log('Unsending Message: ', message);
+                unsends.push(message);
+                // Remove the message from the sends list
+                this.sends.splice(j, 1);
+            }
+        }
+        // Let other clients know that this message is being unsent
+        if(unsends.length != 0)
+            socket.emit('unsend_messages', unsends);
+    }
+
+    // Remove (purge) a specific checkpoint from the list of available checkpoints
+    purgeState(checkpoint) {
+        if(checkpoint.checkpoint_count == 1) {
+            console.log('Cannot Delete Initial Checkpoint');
+            return;
+        }
+        let i = this.checkpoints.length;
+        while(i--) {
+            if(this.checkpoints[i].timestamp == checkpoint.timestamp) {
+                this.checkpoints.splice(i, 1);
+                break;
+            }
+        }
+        this.redrawCheckpoints();
     }
 
     // Remove all of the tile images off of the board and from the deck, and reset the game state
@@ -660,81 +741,13 @@ export class Scrabble extends Phaser.Scene{
         }
     }
 
-    // Creates a new checkpoint with the current system state 
-    saveState() {
-        // There have been no sends or receives since this checkpoint
-        this.num_receives = 0, this.num_sends = 0, this.old_command = '', this.new_command = '';
-        let checkpoint = new State(this.checkpoint_count, this.current_vertical, this.current_horizontal, this.direction, 
-                                   this.num_clickable, this.selected_tile, this.current_tiles, 
-                                   this.submitted_tiles, this.opponent_tiles, this.my_turn);
-        this.checkpoints.push(checkpoint);
-        this.checkpoint_count++;
-        console.log('Saving System State At:', checkpoint.timestamp);
-        console.log('Checkpoint:', checkpoint);
-        this.redrawCheckpoints();
-    }
-
-    // Restores the system state from a specific checkpoint  
-    restoreState(checkpoint) {
-        console.log('Rolling Back To Checkpoint At:', checkpoint.timestamp);
-        console.log('Checkpoint:', checkpoint);
-
-        // Remove all checkpoints that were stored after the one we're rolling back to
-        let i = this.checkpoints.length;
-        while(i--) {
-            if(this.checkpoints[i].timestamp > checkpoint.timestamp) {
-                this.checkpoints.splice(i, 1);
-            }
-        }
-        this.redrawCheckpoints();
-
-        // Set all of the necessary variables
-        this.num_receives = 0, this.num_sends = 0;
-        this.current_vertical = JSON.parse(JSON.stringify(checkpoint.current_vertical));
-        this.current_horizontal = JSON.parse(JSON.stringify(checkpoint.current_horizontal));
-        this.direction = checkpoint.direction;
-        this.num_clickable = checkpoint.num_clickable;
-        this.selected_tile = checkpoint.selected_tile;
-        this.current_tiles = JSON.parse(JSON.stringify(checkpoint.current_tiles));
-        this.submitted_tiles = JSON.parse(JSON.stringify(checkpoint.submitted_tiles));
-        this.opponent_tiles = JSON.parse(JSON.stringify(checkpoint.opponent_tiles));
-        this.my_turn = checkpoint.my_turn;
-
-        // Redraw the "Opponent's Turn" message if necessary
-        if(!this.my_turn) {
-            this.opponent_image.visible = true;
-        }
-        else {
-            // @TODO: Make sure that this works
-            console.log('Setting Server Turn Index To:', this.turn_idx);
-            socket.emit('my_turn', this.turn_idx);
-            this.opponent_image.visible = false;
-        }
-        
-        // Redraw all of the images
+    // Redraw all tile images onto the board
+    redrawBoard() {
         this.redrawTileArray(this.current_horizontal);
         this.redrawTileArray(this.current_vertical);
         this.redrawTileArray(this.current_tiles);
         this.redrawTileArray(this.opponent_tiles);
-        this.redrawTileDict(this.submitted_tiles);   
-
-        // Unsend all of the messages sent after the checkpoint
-        let unsends = [];
-        let j = this.sends.length;
-        while(j--) {
-            let message = this.sends[j];     
-            if(message.timestamp > checkpoint.timestamp) {
-                console.log('Unsending Message: ', message);
-                unsends.push(message);
-                // Remove the message from the sends list
-                this.sends.splice(j, 1);
-            }
-        }
-        // Let other clients know that this message is being unsent
-        if(unsends.length != 0)
-            socket.emit('unsend_messages', unsends);
-
-        // @TODO: Need to worry about unreceiving on R-propagation (ensure that receive list is still prefix of send list)
+        this.redrawTileDict(this.submitted_tiles);  
     }
 
     // Redraw the tile images from an array
@@ -762,7 +775,6 @@ export class Scrabble extends Phaser.Scene{
     // Redraw the checkpoint list on the side menu
     redrawCheckpoints() {
         document.getElementById("checkpoints").options.length = 0;
-       // let checkpoint_message = "";
         for(let i = 0; i < this.checkpoints.length; i++) {
             let temp = this.checkpoints[i];
             let checkpoint_message = ("Checkpoint " + temp.checkpoint_count + " @ T=" + temp.timestamp);
@@ -771,20 +783,10 @@ export class Scrabble extends Phaser.Scene{
             option.text = checkpoint_message;
             x.add(option); 
         }
-        // document.getElementById("checkpoints").textContent = checkpoint_message;
     }
 }
 
 // Determine whether the current square is a valid position to place a tile. If so, return positions of character in words.
-/* @TODO: Fix for the following case:    
-         U
-        AN
-        PI
-        P
-        L
-        E
-    horizontal words: AN, PI 
-    vertical word: UNI              */
 function isValidPosition(square, h_word, v_word, direction, submitted) {
     // If the tile is being placed on a non-empty square, do not place it
     if([square.x, square.y] in submitted) {
