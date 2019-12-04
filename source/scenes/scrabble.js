@@ -15,6 +15,16 @@ export class Scrabble extends Phaser.Scene{
     }
 
     init(data) {
+
+        document.getElementById('delete-checkpoint').onclick = function() {
+           alert("delete " + document.getElementById("checkpoints").selectedIndex);
+        };
+
+        document.getElementById('goto-checkpoint').onclick = function() {
+           alert("goto " + document.getElementById("checkpoints").selectedIndex);
+        };
+
+
         console.log('Data From Menu:', data);
         // If the MRS flag is true, then save checkpoints according to Mark->Send->Receive scheme
         this.mrs = data.mrs;
@@ -90,7 +100,7 @@ export class Scrabble extends Phaser.Scene{
     }
 
     create() {
-        document.getElementById("checkpoints").textContent = "No Checkpoints"
+        //document.getElementById("checkpoints").textContent = "No Checkpoints"
 
         document.addEventListener('contextmenu', function(event){
             event.preventDefault();
@@ -751,12 +761,17 @@ export class Scrabble extends Phaser.Scene{
 
     // Redraw the checkpoint list on the side menu
     redrawCheckpoints() {
-        let checkpoint_message = "";
+        document.getElementById("checkpoints").options.length = 0;
+       // let checkpoint_message = "";
         for(let i = 0; i < this.checkpoints.length; i++) {
             let temp = this.checkpoints[i];
-            checkpoint_message += ("Checkpoint " + temp.checkpoint_count + " @ T=" + temp.timestamp + "\n");
+            let checkpoint_message = ("Checkpoint " + temp.checkpoint_count + " @ T=" + temp.timestamp);
+            let x = document.getElementById("checkpoints");
+            let option = document.createElement("option");
+            option.text = checkpoint_message;
+            x.add(option); 
         }
-        document.getElementById("checkpoints").textContent = checkpoint_message;
+        // document.getElementById("checkpoints").textContent = checkpoint_message;
     }
 }
 
