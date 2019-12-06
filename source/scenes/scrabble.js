@@ -92,11 +92,11 @@ export class Scrabble extends Phaser.Scene{
     create() {
         document.getElementById('delete-checkpoint').onclick = ()=>{
             this.purgeState(this.checkpoints[document.getElementById('checkpoints').selectedIndex]);
-         };
+        };
  
-         document.getElementById('goto-checkpoint').onclick = ()=> {
+        document.getElementById('goto-checkpoint').onclick = ()=> {
             this.restoreState(this.checkpoints[document.getElementById('checkpoints').selectedIndex]);
-         };
+        };
 
         document.addEventListener('contextmenu', function(event){
             event.preventDefault();
@@ -163,16 +163,16 @@ export class Scrabble extends Phaser.Scene{
 
         // When another player places a tile, place it on this player's board
         socket.on('tile_placed', (message)=> {
+            // Store the new receive command for MRS checking
+            this.old_command = this.new_command;
+            this.new_command = 'receive';
+
             // Checks whether a checkpoint should be placed after the last send/receive according to the MRS scheme
             if(this.mrs && this.old_command == 'send' && this.new_command == 'receive')
                 this.saveState();
 
             this.receives.push(message);
             this.num_receives++;
-
-            // Store the new receive command for MRS checking
-            this.old_command = this.new_command;
-            this.new_command = 'receive';
             
             let tile = message.data;
             console.log('Opponent Placed Tile:', tile.letter);
@@ -186,16 +186,16 @@ export class Scrabble extends Phaser.Scene{
         
         // When another player removes a tile, remove it from this player's board
         socket.on('tile_removed', (message)=> {
+            // Store the new receive command for MRS checking
+            this.old_command = this.new_command;
+            this.new_command = 'receive';
+
             // Checks whether a checkpoint should be placed after the last send/receive according to the MRS scheme
             if(this.mrs && this.old_command == 'send' && this.new_command == 'receive')
                 this.saveState();
 
             this.receives.push(message);
             this.num_receives++;
-
-            // Store the new receive command for MRS checking
-            this.old_command = this.new_command;
-            this.new_command = 'receive';
 
             let tile = message.data;
             console.log('Opponent Removed Tile:', tile.letter);
@@ -609,7 +609,7 @@ export class Scrabble extends Phaser.Scene{
         console.log('Cleared Current Words');
     }
 
-    // Initiates the rollback procedure (clears bord and restores state from first checkpoint after timestamp)
+    // Initiates the rollback procedure (Finds the most recent checkpoint to restore to)
     rollback(timestamp) {
         console.log('Rolling Back Before:', timestamp);
         // Restore state from the most recent checkpoint before the timestamp of the message being unsent / unreceived
@@ -655,6 +655,7 @@ export class Scrabble extends Phaser.Scene{
 
         // Set all of the necessary variables
         this.num_receives = 0, this.num_sends = 0;
+        this.old_command = '', this.new_command = '';
         this.current_vertical = JSON.parse(JSON.stringify(checkpoint.current_vertical));
         this.current_horizontal = JSON.parse(JSON.stringify(checkpoint.current_horizontal));
         this.direction = checkpoint.direction;
