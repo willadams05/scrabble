@@ -22,9 +22,9 @@ export class Scrabble extends Phaser.Scene{
         this.old_command = '';
         this.new_command = '';
         // When this many receives have occurred, save a checkpoint
-        this.receive_limit = this.mrs ? -1 : data.receive_limit;
+        this.receive_limit = this.mrs ? 1 : data.receive_limit;
         // When this many sends have occurred, save a checkpoint
-        this.send_limit = this.mrs ? -1 : data.send_limit;
+        this.send_limit = this.mrs ? 1 : data.send_limit;
         // Dict of all tiles and their corresponding point values
         this.tile_scores = {
             'A': 1, 'B': 3, 'C': 3, 'D': 2, 'E': 1, 'F': 4, 'G': 2, 'H': 4,
@@ -169,7 +169,7 @@ export class Scrabble extends Phaser.Scene{
 
             // Checks whether a checkpoint should be placed after the last send/receive according to the MRS scheme
             if(this.mrs && this.old_command == 'send' && this.new_command == 'receive')
-                this.saveState();
+                this.saveState(message.timestamp-1);
 
             this.receives.push(message);
             this.num_receives++;
@@ -192,7 +192,7 @@ export class Scrabble extends Phaser.Scene{
 
             // Checks whether a checkpoint should be placed after the last send/receive according to the MRS scheme
             if(this.mrs && this.old_command == 'send' && this.new_command == 'receive')
-                this.saveState();
+                this.saveState(message.timestamp-1);
 
             this.receives.push(message);
             this.num_receives++;
@@ -623,12 +623,12 @@ export class Scrabble extends Phaser.Scene{
     }
 
     // Creates a new checkpoint with the current system state 
-    saveState() {
+    saveState(timestamp) {
         // There have been no sends or receives since this checkpoint
         this.num_receives = 0, this.num_sends = 0, this.old_command = '', this.new_command = '';
         let checkpoint = new State(this.checkpoint_count, this.current_vertical, this.current_horizontal, this.direction, 
                                    this.num_clickable, this.selected_tile, this.current_tiles, 
-                                   this.submitted_tiles, this.opponent_tiles, this.my_turn);
+                                   this.submitted_tiles, this.opponent_tiles, this.my_turn, timestamp);
         this.checkpoints.push(checkpoint);
         this.checkpoint_count++;
         console.log('Saving System State At:', checkpoint.timestamp);

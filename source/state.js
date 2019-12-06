@@ -1,6 +1,6 @@
 export class State {
     constructor(count, vertical, horizontal, direction, num_clickable, selected_tile, 
-                current_tiles, submitted_tiles, opponent_tiles, turn) {
+                current_tiles, submitted_tiles, opponent_tiles, turn, timestamp) {
         this.checkpoint_count = count;
         // Create deep copy of the vertical word array
         this.current_vertical = JSON.parse(JSON.stringify(vertical));
@@ -16,6 +16,6 @@ export class State {
         // Create deep copy of the opponent tiles array
         this.opponent_tiles = JSON.parse(JSON.stringify(opponent_tiles));
         this.my_turn = turn;
-        this.timestamp = Date.now();
+        this.timestamp = timestamp === undefined ? Date.now() : timestamp;
     }
 }
