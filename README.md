@@ -9,6 +9,12 @@ CS 386C Scrabble with State Rollback Recovery
     - socket.io
     - check-word
 
-# Run game with node.js: 
+# Start server with node.js: 
 
 `node app.js`
+
+# Connect to game by opening browser and entering:
+
+`localhost:3000`
+
+Note: Two connections are required to start the game (open 2 tabs and start localhost:3000 on both)
